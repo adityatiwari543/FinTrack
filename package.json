@@ -10,7 +10,7 @@
     "test:notification": "npm --prefix services/notification-service test",
     "test:gateway": "npm --prefix gateway test",
     "test:frontend": "npm --prefix frontend test",
-    "test:integration": "node ./services/transaction-service/node_modules/jest/bin/jest.js --config jest.integration.config.js --runInBand --forceExit",
+    "test:integration": "npm --prefix services/transaction-service exec -- jest --config jest.integration.config.js --runInBand --forceExit",
     "test:all": "npm test && npm run test:integration",
     "lint": "npm run lint:gateway && npm run lint:auth && npm run lint:transaction && npm run lint:notification && npm run lint:frontend",
     "lint:gateway": "npm --prefix gateway run lint --if-present",
