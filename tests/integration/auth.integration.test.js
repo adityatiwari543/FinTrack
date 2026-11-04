@@ -185,19 +185,20 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
 
   it('Requirement 8: Logout revokes real session in MongoDB', runIfMongo(async () => {
     const email = 'logout.test@fintrack.app';
-    await request(app)
+    const regRes = await request(app)
       .post('/register')
       .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({ name: 'Logout User', email, password: 'Password@123' });
 
-    const loginRes = await request(app)
-      .post('/login')
-      .set('Content-Type', 'application/json')
-      .set('x-internal-token', internalSecret)
-      .send({ email, password: 'Password@123' });
+    const cookie = regRes.headers['set-cookie'][0].split(';')[0];
+    const rawToken = cookie.split('=')[1];
+    const { hashToken } = require('../../services/auth-service/src/utils/token');
+    const tokenHash = hashToken(rawToken);
 
-    const cookie = loginRes.headers['set-cookie'][0].split(';')[0];
+    // Verify token exists in MongoDB before logout
+    const userBefore = await User.findOne({ email });
+    expect(userBefore.refreshTokens.some(t => t.tokenHash === tokenHash)).toBe(true);
 
     const logoutRes = await request(app)
       .post('/logout')
@@ -208,7 +209,15 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
 
     // Verify session revoked in real MongoDB
     const user = await User.findOne({ email });
+    expect(user.refreshTokens.some(t => t.tokenHash === tokenHash)).toBe(false);
     expect(user.refreshTokens.length).toBe(0);
+
+    // Verify revoked token cannot be used to refresh
+    const reuseAttempt = await request(app)
+      .post('/refresh')
+      .set('x-internal-token', internalSecret)
+      .set('Cookie', [cookie]);
+    expect(reuseAttempt.status).toBe(401);
   }));
 
   it('Requirement 9: Invalid tokens are rejected', runIfMongo(async () => {
