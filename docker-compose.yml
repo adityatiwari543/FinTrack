@@ -1,0 +1,205 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # Message Broker: RabbitMQ
+  # ==========================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: fintrack-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"   # AMQP protocol
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - fintrack-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Databases: Dedicated per Service
+  # ==========================================
+  mongo-auth:
+    image: mongo:7-jammy
+    container_name: fintrack-mongo-auth
+    restart: unless-stopped
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo_auth_data:/data/db
+    networks:
+      - fintrack-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo-transactions:
+    image: mongo:7-jammy
+    container_name: fintrack-mongo-transactions
+    restart: unless-stopped
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo_transactions_data:/data/db
+    networks:
+      - fintrack-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo-notifications:
+    image: mongo:7-jammy
+    container_name: fintrack-mongo-notifications
+    restart: unless-stopped
+    ports:
+      - "27020:27017"
+    volumes:
+      - mongo_notifications_data:/data/db
+    networks:
+      - fintrack-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Backend Microservices
+  # ==========================================
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: fintrack-auth-service
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      PORT: 5001
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongo-auth:27017/fintrack_auth
+      JWT_SECRET: fintrack_jwt_access_super_secret_key_change_in_production_32chars
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_SECRET: fintrack_jwt_refresh_super_secret_key_change_in_production_32chars
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+    depends_on:
+      mongo-auth:
+        condition: service_healthy
+    networks:
+      - fintrack-net
+
+  transaction-service:
+    build:
+      context: ./services/transaction-service
+      dockerfile: Dockerfile
+    container_name: fintrack-transaction-service
+    restart: unless-stopped
+    ports:
+      - "5002:5002"
+    environment:
+      PORT: 5002
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongo-transactions:27017/fintrack_transactions
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      EXCHANGE_NAME: fintrack_events
+      ROUTING_KEY_EXPENSE: expense.created
+    depends_on:
+      mongo-transactions:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fintrack-net
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: fintrack-notification-service
+    restart: unless-stopped
+    ports:
+      - "5003:5003"
+    environment:
+      PORT: 5003
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongo-notifications:27017/fintrack_notifications
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      EXCHANGE_NAME: fintrack_events
+      QUEUE_NAME: notifications_expense_queue
+      ROUTING_KEY_EXPENSE: expense.created
+      DEFAULT_ALERT_THRESHOLD: 10000
+    depends_on:
+      mongo-notifications:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fintrack-net
+
+  # ==========================================
+  # API Gateway
+  # ==========================================
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: fintrack-gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: 8000
+      NODE_ENV: production
+      FRONTEND_URL: http://localhost:5173
+      JWT_SECRET: fintrack_jwt_access_super_secret_key_change_in_production_32chars
+      AUTH_SERVICE_URL: http://auth-service:5001
+      TRANSACTION_SERVICE_URL: http://transaction-service:5002
+      NOTIFICATION_SERVICE_URL: http://notification-service:5003
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX: 200
+    depends_on:
+      - auth-service
+      - transaction-service
+      - notification-service
+    networks:
+      - fintrack-net
+
+  # ==========================================
+  # Frontend Application
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_GATEWAY_URL: http://localhost:8000/api
+    container_name: fintrack-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - gateway
+    networks:
+      - fintrack-net
+
+networks:
+  fintrack-net:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
+  mongo_auth_data:
+  mongo_transactions_data:
+  mongo_notifications_data:
