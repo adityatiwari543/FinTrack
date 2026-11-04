@@ -43,6 +43,16 @@ describe('Cross-Service End-to-End Event Flow Integration Tests (Phase C)', () =
     const e2eMongoUri = process.env.TEST_TRANSACTION_MONGO_URI || TEST_CONFIG.transactionMongoUri;
     await mongoose.connect(e2eMongoUri);
 
+    const Notification = require('../../services/notification-service/src/models/notification.model');
+    const Threshold = require('../../services/notification-service/src/models/threshold.model');
+    const Transaction = require('../../services/transaction-service/src/models/transaction.model');
+    await Notification.syncIndexes();
+    await Threshold.syncIndexes();
+    await Transaction.syncIndexes();
+    await Notification.deleteMany({});
+    await Threshold.deleteMany({});
+    await Transaction.deleteMany({});
+
     // Connect to RabbitMQ test exchange
     try {
       amqpConn = await amqp.connect(TEST_CONFIG.rabbitmqUrl);
@@ -95,6 +105,7 @@ describe('Cross-Service End-to-End Event Flow Integration Tests (Phase C)', () =
     // 1. Configure user threshold: ₹10,000
     const threshRes = await request(notifApp)
       .put('/settings/threshold')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', testUser)
       .send({ threshold: 10000 });
@@ -104,6 +115,7 @@ describe('Cross-Service End-to-End Event Flow Integration Tests (Phase C)', () =
     // 2. Create an expense of ₹25,000 (crossing threshold)
     const txRes = await request(txApp)
       .post('/transactions')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', testUser)
       .send({
@@ -146,6 +158,7 @@ describe('Cross-Service End-to-End Event Flow Integration Tests (Phase C)', () =
     // Create an expense of ₹5,000 (below ₹10,000 threshold)
     const txRes = await request(txApp)
       .post('/transactions')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', testUser)
       .send({
