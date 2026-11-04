@@ -1,3 +1,8 @@
+process.env.NODE_ENV = 'test';
+process.env.INTERNAL_SERVICE_SECRET = process.env.INTERNAL_SERVICE_SECRET || 'test_internal_secret_32_characters';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_key_minimum_32_characters';
+process.env.REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || 'test_jwt_secret_key_minimum_32_characters';
+
 module.exports = {
   testEnvironment: 'node',
   moduleDirectories: [
