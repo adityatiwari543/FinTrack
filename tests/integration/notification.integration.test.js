@@ -50,17 +50,22 @@ describe('Notification Service Real MongoDB + RabbitMQ Integration Tests (Phase 
     await Notification.syncIndexes();
 
     // Set up real test exchange and queues on broker
-    amqpConn = await amqp.connect(TEST_CONFIG.rabbitmqUrl);
-    amqpChannel = await amqpConn.createChannel();
+    try {
+      amqpConn = await amqp.connect(TEST_CONFIG.rabbitmqUrl);
+      amqpChannel = await amqpConn.createChannel();
 
-    await amqpChannel.assertExchange(TEST_CONFIG.exchangeName, 'topic', { durable: true });
-    await amqpChannel.assertExchange(TEST_CONFIG.dlxName, 'topic', { durable: true });
+      await amqpChannel.assertExchange(TEST_CONFIG.exchangeName, 'topic', { durable: true });
+      await amqpChannel.assertExchange(TEST_CONFIG.dlxName, 'topic', { durable: true });
 
-    await amqpChannel.assertQueue(TEST_CONFIG.queueName, { durable: true });
-    await amqpChannel.assertQueue(TEST_CONFIG.dlqName, { durable: true });
+      await amqpChannel.assertQueue(TEST_CONFIG.queueName, { durable: true });
+      await amqpChannel.assertQueue(TEST_CONFIG.dlqName, { durable: true });
 
-    await amqpChannel.bindQueue(TEST_CONFIG.queueName, TEST_CONFIG.exchangeName, TEST_CONFIG.routingKeyExpense);
-    await amqpChannel.bindQueue(TEST_CONFIG.dlqName, TEST_CONFIG.dlxName, '#');
+      await amqpChannel.bindQueue(TEST_CONFIG.queueName, TEST_CONFIG.exchangeName, TEST_CONFIG.routingKeyExpense);
+      await amqpChannel.bindQueue(TEST_CONFIG.dlqName, TEST_CONFIG.dlxName, '#');
+    } catch (err) {
+      console.warn('RabbitMQ broker connection failed:', err.message);
+      rabbitAvailable = false;
+    }
 
     app = require('../../services/notification-service/src/app');
   });

@@ -65,8 +65,9 @@ jobs:
         ports:
           - 5672:5672
         env:
-          RABBITMQ_DEFAULT_USER: guest
-          RABBITMQ_DEFAULT_PASS: guest
+          RABBITMQ_DEFAULT_USER: fintrack_ci_user
+          RABBITMQ_DEFAULT_PASS: fintrack_ci_password_32chars
+          RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit loopback_users []
         options: >-
           --health-cmd "rabbitmq-diagnostics -q ping"
           --health-interval 10s
@@ -117,7 +118,7 @@ jobs:
           TEST_AUTH_MONGO_URI: mongodb://127.0.0.1:27017/fintrack_auth_test
           TEST_TRANSACTION_MONGO_URI: mongodb://127.0.0.1:27017/fintrack_transactions_test
           TEST_NOTIFICATION_MONGO_URI: mongodb://127.0.0.1:27017/fintrack_notifications_test
-          TEST_RABBITMQ_URL: amqp://guest:guest@127.0.0.1:5672
+          TEST_RABBITMQ_URL: amqp://fintrack_ci_user:fintrack_ci_password_32chars@127.0.0.1:5672
 
       - name: Build Frontend Application Bundle
         run: npm --prefix frontend run build

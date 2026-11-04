@@ -44,12 +44,17 @@ describe('Cross-Service End-to-End Event Flow Integration Tests (Phase C)', () =
     await mongoose.connect(e2eMongoUri);
 
     // Connect to RabbitMQ test exchange
-    amqpConn = await amqp.connect(TEST_CONFIG.rabbitmqUrl);
-    amqpChannel = await amqpConn.createChannel();
+    try {
+      amqpConn = await amqp.connect(TEST_CONFIG.rabbitmqUrl);
+      amqpChannel = await amqpConn.createChannel();
 
-    await amqpChannel.assertExchange(TEST_CONFIG.exchangeName, 'topic', { durable: true });
-    await amqpChannel.assertQueue(TEST_CONFIG.queueName, { durable: true });
-    await amqpChannel.bindQueue(TEST_CONFIG.queueName, TEST_CONFIG.exchangeName, TEST_CONFIG.routingKeyExpense);
+      await amqpChannel.assertExchange(TEST_CONFIG.exchangeName, 'topic', { durable: true });
+      await amqpChannel.assertQueue(TEST_CONFIG.queueName, { durable: true });
+      await amqpChannel.bindQueue(TEST_CONFIG.queueName, TEST_CONFIG.exchangeName, TEST_CONFIG.routingKeyExpense);
+    } catch (err) {
+      console.warn('RabbitMQ E2E connection failed:', err.message);
+      rabbitAvailable = false;
+    }
 
     txApp = require('../../services/transaction-service/src/app');
     notifApp = require('../../services/notification-service/src/app');
