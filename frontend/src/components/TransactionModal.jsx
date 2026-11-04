@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 const COMMON_EXPENSE_CATEGORIES = [
@@ -64,6 +65,15 @@ export function TransactionModal({ isOpen, onClose, onSave, transaction = null }
       return;
     }
 
+    const amountStr = String(amount).trim();
+    if (amountStr.includes('.')) {
+      const decimals = amountStr.split('.')[1];
+      if (decimals && decimals.length > 2) {
+        setError('Amount cannot have more than 2 decimal places');
+        return;
+      }
+    }
+
     if (!category.trim()) {
       setError('Please select or specify a category');
       return;
@@ -88,9 +98,9 @@ export function TransactionModal({ isOpen, onClose, onSave, transaction = null }
 
   if (!isOpen) return null;
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-auto">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-slate-800 text-base">
@@ -106,7 +116,7 @@ export function TransactionModal({ isOpen, onClose, onSave, transaction = null }
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
           {error && (
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -154,21 +164,49 @@ export function TransactionModal({ isOpen, onClose, onSave, transaction = null }
 
           {/* Amount (INR ₹) */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-              Amount (INR ₹)
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">
+                Amount (INR ₹)
+              </label>
+              <span className="text-[11px] text-slate-400">Step: ₹50</span>
+            </div>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-semibold">₹</span>
               <input
                 type="number"
-                min="0.01"
-                step="any"
+                min="0"
+                step="50"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 text-base"
-                placeholder="5000"
+                placeholder="500"
                 required
               />
+            </div>
+            {/* Quick adjust chips */}
+            <div className="flex items-center gap-1.5 mt-2">
+              {[50, 100, 500, 1000].map((increment) => (
+                <button
+                  key={increment}
+                  type="button"
+                  onClick={() => {
+                    const current = Number(amount) || 0;
+                    setAmount(String(current + increment));
+                  }}
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-medium transition"
+                  title={`Add ₹${increment}`}
+                >
+                  +₹{increment}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setAmount('')}
+                className="px-2 py-1 rounded-lg text-slate-400 hover:text-slate-600 text-xs font-medium ml-auto transition"
+                title="Clear amount"
+              >
+                Clear
+              </button>
             </div>
           </div>
 
@@ -256,4 +294,6 @@ export function TransactionModal({ isOpen, onClose, onSave, transaction = null }
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

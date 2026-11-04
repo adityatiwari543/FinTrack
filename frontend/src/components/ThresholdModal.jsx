@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { notificationApi } from '../api/notifications';
 import { X, Sliders, Check, AlertCircle } from 'lucide-react';
 
@@ -28,9 +29,9 @@ export function ThresholdModal({ initialThreshold, onClose, onUpdated }) {
     }
   };
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-auto">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
@@ -120,4 +121,6 @@ export function ThresholdModal({ initialThreshold, onClose, onUpdated }) {
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

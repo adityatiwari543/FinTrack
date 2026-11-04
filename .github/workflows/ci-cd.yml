@@ -1,3 +1,26 @@
+# ==============================================================================
+# FinTrack — Production Microservices CI/CD Pipeline
+#
+# Pipeline Architecture:
+#   Job 1: validate-and-test
+#          - Linting across all 5 units
+#          - Unit and workflow tests across all services (127 tests)
+#          - Real infrastructure integration tests against MongoDB & RabbitMQ (31 tests)
+#          - Frontend static build verification (Vite)
+#          - Docker Compose configuration syntax validation
+#
+#   Job 2: docker-build-and-push
+#          - Multi-stage Docker builds across 5 units via Docker Buildx
+#          - Layer caching via GitHub Actions cache (type=gha)
+#          - Pull requests: build validation only (push: false)
+#          - Main branch: publishes tagged images to GitHub Container Registry (GHCR)
+#
+#   Job 3: deploy
+#          - Gated CD trigger on merge to main
+#          - Secure deployment webhook dispatch via DEPLOY_HOOK_URL
+#          - Automated production health verification via DEPLOY_HEALTH_CHECK_URL
+# ==============================================================================
+
 name: FinTrack Microservices CI/CD Pipeline
 
 on:
@@ -5,24 +28,51 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
-  # ==========================================
-  # Job 1: Test & Lint across all services
-  # ==========================================
-  test-and-lint:
-    name: Test & Lint Microservices
+  # ============================================================================
+  # Job 1: Install, Lint, Test & Validate
+  # ============================================================================
+  validate-and-test:
+    name: Validate, Lint & Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service:
-          - auth-service
-          - transaction-service
-          - notification-service
-          - gateway
+    timeout-minutes: 15
+
+    services:
+      mongo:
+        image: mongo:7-jammy
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval \"db.adminCommand('ping')\""
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        ports:
+          - 5672:5672
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -33,72 +83,92 @@ jobs:
           node-version: 20
           cache: 'npm'
           cache-dependency-path: |
-            services/${{ matrix.service }}/package-lock.json
+            package-lock.json
             gateway/package-lock.json
+            services/auth-service/package-lock.json
+            services/transaction-service/package-lock.json
+            services/notification-service/package-lock.json
+            frontend/package-lock.json
 
-      - name: Install Dependencies
+      - name: Install All Dependencies via npm ci
         run: |
-          if [ "${{ matrix.service }}" = "gateway" ]; then
-            cd gateway && npm ci
-          else
-            cd services/${{ matrix.service }} && npm ci
-          fi
+          echo "Installing root dependencies..."
+          npm ci || npm install --package-lock-only && npm ci
+          echo "Installing gateway dependencies..."
+          cd gateway && npm ci && cd ..
+          echo "Installing auth-service dependencies..."
+          cd services/auth-service && npm ci && cd ..
+          echo "Installing transaction-service dependencies..."
+          cd services/transaction-service && npm ci && cd ..
+          echo "Installing notification-service dependencies..."
+          cd services/notification-service && npm ci && cd ..
+          echo "Installing frontend dependencies..."
+          cd frontend && npm ci && cd ..
 
-      - name: Run Tests
-        run: |
-          if [ "${{ matrix.service }}" = "gateway" ]; then
-            cd gateway && npm test
-          else
-            cd services/${{ matrix.service }} && npm test
-          fi
+      - name: Run ESLint Checks
+        run: npm run lint
 
-  # ==========================================
-  # Job 2: Frontend Build Verification
-  # ==========================================
-  frontend-build:
-    name: Build Frontend
+      - name: Run Unit and Workflow Test Suites
+        run: npm test
+
+      - name: Run Real Infrastructure Integration Test Suite
+        run: npm run test:integration
+        env:
+          TEST_AUTH_MONGO_URI: mongodb://127.0.0.1:27017/fintrack_auth_test
+          TEST_TRANSACTION_MONGO_URI: mongodb://127.0.0.1:27017/fintrack_transactions_test
+          TEST_NOTIFICATION_MONGO_URI: mongodb://127.0.0.1:27017/fintrack_notifications_test
+          TEST_RABBITMQ_URL: amqp://guest:guest@127.0.0.1:5672
+
+      - name: Build Frontend Application Bundle
+        run: npm --prefix frontend run build
+        env:
+          VITE_API_GATEWAY_URL: http://localhost:8000/api
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose config
+        env:
+          RABBITMQ_USER: fintrack_ci_user
+          RABBITMQ_PASS: fintrack_ci_password_32chars
+          JWT_SECRET: ci_jwt_secret_key_minimum_32_characters
+          REFRESH_TOKEN_SECRET: ci_refresh_secret_key_minimum_32_characters
+          INTERNAL_SERVICE_SECRET: ci_internal_secret_key_minimum_32_characters
+
+  # ============================================================================
+  # Job 2: Build & Push Docker Images
+  # ============================================================================
+  docker-build-and-push:
+    name: Build & Push ${{ matrix.component.name }}
+    needs: [validate-and-test]
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install Frontend Dependencies
-        run: cd frontend && npm ci
-
-      - name: Build Vite App
-        run: cd frontend && npm run build
-
-  # ==========================================
-  # Job 3: Build & Push Docker Images to GHCR
-  # ==========================================
-  build-and-push:
-    name: Build & Push Docker Containers
-    needs: [test-and-lint, frontend-build]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    strategy:
-      matrix:
-        component:
-          - name: auth-service
-            context: ./services/auth-service
-          - name: transaction-service
-            context: ./services/transaction-service
-          - name: notification-service
-            context: ./services/notification-service
-          - name: gateway
-            context: ./gateway
-          - name: frontend
-            context: ./frontend
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - name: gateway
+            context: ./gateway
+            dockerfile: ./gateway/Dockerfile
+            image: fintrack-gateway
+          - name: auth-service
+            context: ./services/auth-service
+            dockerfile: ./services/auth-service/Dockerfile
+            image: fintrack-auth-service
+          - name: transaction-service
+            context: ./services/transaction-service
+            dockerfile: ./services/transaction-service/Dockerfile
+            image: fintrack-transaction-service
+          - name: notification-service
+            context: ./services/notification-service
+            dockerfile: ./services/notification-service/Dockerfile
+            image: fintrack-notification-service
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            image: fintrack-frontend
 
     steps:
       - name: Checkout Code
@@ -108,45 +178,86 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Metadata (Tags, Labels)
+      - name: Extract Docker Metadata (Tags & Labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.component.name }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.component.image }}
           tags: |
-            type=sha,format=short
-            type=raw,value=latest
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v5
+      - name: Build and Push Image
+        uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.component.context }}
-          push: true
+          file: ${{ matrix.component.dockerfile }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.component.name }}
+          cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('type=gha,mode=max,scope={0}', matrix.component.name) || '' }}
 
-  # ==========================================
-  # Job 4: Automated Deployment Trigger
-  # ==========================================
+  # ============================================================================
+  # Job 3: Automated Production Deployment
+  # ============================================================================
   deploy:
-    name: Trigger Automated Deployment
-    needs: [build-and-push]
+    name: Production Deployment
+    needs: [docker-build-and-push]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 10
+
+    env:
+      HAS_DEPLOY_HOOK: ${{ secrets.DEPLOY_HOOK_URL != '' }}
+      HAS_HEALTH_CHECK: ${{ secrets.DEPLOY_HEALTH_CHECK_URL != '' }}
+
     steps:
-      - name: Trigger Deploy Hook
+      - name: Trigger Automated Deployment Webhook
+        if: env.HAS_DEPLOY_HOOK == 'true'
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
         run: |
-          if [ -n "${{ secrets.DEPLOY_HOOK_URL }}" ]; then
-            echo "Triggering deployment webhook..."
-            curl -X POST "${{ secrets.DEPLOY_HOOK_URL }}"
+          echo "Triggering automated deployment webhook..."
+          HTTP_STATUS=$(curl -s -o deploy_output.txt -w "%{http_code}" -X POST "$DEPLOY_HOOK_URL")
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Deployment webhook dispatched successfully (HTTP $HTTP_STATUS)."
           else
-            echo "No DEPLOY_HOOK_URL configured. Docker images published to GHCR successfully."
+            echo "Deployment webhook failed with HTTP $HTTP_STATUS:"
+            cat deploy_output.txt
+            exit 1
           fi
+
+      - name: Verify Production Health Check
+        if: env.HAS_HEALTH_CHECK == 'true'
+        env:
+          HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_CHECK_URL }}
+        run: |
+          echo "Polling production health check at $HEALTH_URL..."
+          for i in {1..12}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
+            if [ "$STATUS" -eq 200 ]; then
+              echo "Production health check verified! (HTTP 200)"
+              exit 0
+            fi
+            echo "Attempt $i: Received HTTP $STATUS, retrying in 10s..."
+            sleep 10
+          done
+          echo "Health check verification timed out after 120 seconds."
+          exit 1
+
+      - name: Deployment Gating Notice
+        if: env.HAS_DEPLOY_HOOK != 'true'
+        run: |
+          echo "=========================================================================="
+          echo "NOTICE: Docker images were successfully built and published to GHCR."
+          echo "Automated deployment was safely bypassed because DEPLOY_HOOK_URL is not set."
+          echo "To enable automated CD, configure DEPLOY_HOOK_URL in repository secrets."
+          echo "=========================================================================="

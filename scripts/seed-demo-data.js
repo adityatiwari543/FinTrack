@@ -1,6 +1,11 @@
 /**
  * FinTrack Demo Data Seeder
  * Seeds demo user and transactions spread across October and November 2026.
+ * 
+ * Features:
+ *   - Idempotent: checks for existing transactions before inserting, preventing duplicates on rerun.
+ *   - Configures default alert threshold to ₹10,000 (1,000,000 paise).
+ *   - Uses canonical INR decimal amounts that map to integer paise in storage.
  *
  * Usage:
  *   node scripts/seed-demo-data.js [gateway_url]
@@ -92,11 +97,36 @@ async function seed() {
       console.log(`   ✓ Threshold set to ₹${threshData.data?.threshold}`);
     }
 
-    // 3. Insert sample transactions
-    console.log(`\n3. Seeding ${SAMPLE_TRANSACTIONS.length} Transactions across Oct & Nov 2026...`);
+    // 3. Fetch existing user transactions to enforce idempotency
+    console.log(`\n3. Checking existing transactions to avoid duplicates...`);
+    const existingRes = await fetch(`${GATEWAY_URL}/transactions?limit=100`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const existingData = await existingRes.json();
+    const existingList = (existingData.success && existingData.data?.transactions) || [];
+    console.log(`   Found ${existingList.length} existing transactions in account.`);
+
+    // 4. Insert sample transactions (skipping duplicates)
+    console.log(`\n4. Seeding Transactions across Oct & Nov 2026...`);
     let createdCount = 0;
+    let skippedCount = 0;
 
     for (const tx of SAMPLE_TRANSACTIONS) {
+      const symbol = tx.type === 'income' ? '+' : '-';
+      const alreadyExists = existingList.some(e => {
+        const sameType = e.type === tx.type;
+        const sameAmount = Math.abs(Number(e.amount) - Number(tx.amount)) < 0.001;
+        const sameCategory = e.category === tx.category;
+        const sameDate = e.date && e.date.substring(0, 10) === tx.date.substring(0, 10);
+        return sameType && sameAmount && sameCategory && sameDate;
+      });
+
+      if (alreadyExists) {
+        skippedCount++;
+        console.log(`   - [${tx.date.substring(0, 10)}] ${symbol}₹${tx.amount.toLocaleString('en-IN')} (${tx.category}) already exists (skipped)`);
+        continue;
+      }
+
       const res = await fetch(`${GATEWAY_URL}/transactions`, {
         method: 'POST',
         headers: {
@@ -108,7 +138,6 @@ async function seed() {
       const data = await res.json();
       if (res.ok && data.success) {
         createdCount++;
-        const symbol = tx.type === 'income' ? '+' : '-';
         console.log(`   ✓ [${tx.date.substring(0, 10)}] ${symbol}₹${tx.amount.toLocaleString('en-IN')} (${tx.category}) - ${tx.note}`);
       } else {
         console.warn(`   ✗ Failed to create transaction:`, data.error?.message);
@@ -117,7 +146,8 @@ async function seed() {
 
     console.log(`\n==============================================`);
     console.log(`🎉 Demo Seeding Completed Successfully!`);
-    console.log(`   Total transactions created: ${createdCount}`);
+    console.log(`   Transactions created: ${createdCount}`);
+    console.log(`   Transactions skipped: ${skippedCount} (idempotent)`);
     console.log(`   Demo Email:    ${DEMO_USER.email}`);
     console.log(`   Demo Password: ${DEMO_USER.password}`);
     console.log(`   Threshold:     ₹10,000`);

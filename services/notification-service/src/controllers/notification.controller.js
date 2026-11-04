@@ -3,6 +3,7 @@ const Notification = require('../models/notification.model');
 const Threshold = require('../models/threshold.model');
 const config = require('../config/env');
 const { sendSuccess, sendError } = require('../utils/response');
+const { toPaise, toRupees } = require('../utils/currency');
 
 /**
  * Get user's notifications (sorted latest first)
@@ -53,22 +54,29 @@ async function markNotificationAsRead(req, res, next) {
 
 /**
  * Set user's expense alert threshold
+ * Input threshold is in INR, stored internally as integer thresholdPaise
  */
 async function setThreshold(req, res, next) {
   try {
     const userId = req.userId;
     const { threshold } = req.validatedBody;
 
+    const thresholdPaise = toPaise(threshold, true);
+
     const setting = await Threshold.findOneAndUpdate(
       { userId },
-      { threshold },
+      { thresholdPaise, threshold },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
-    req.log?.info({ userId, threshold }, 'Expense alert threshold updated');
+    req.log?.info({ userId, threshold, thresholdPaise }, 'Expense alert threshold updated');
+
+    const returnedThreshold = typeof setting.thresholdPaise === 'number'
+      ? toRupees(setting.thresholdPaise)
+      : setting.threshold;
 
     return sendSuccess(res, {
-      threshold: setting.threshold
+      threshold: returnedThreshold
     }, 200);
   } catch (err) {
     next(err);
@@ -76,15 +84,22 @@ async function setThreshold(req, res, next) {
 }
 
 /**
- * Get user's expense alert threshold
+ * Get user's expense alert threshold (returns INR value)
  */
 async function getThreshold(req, res, next) {
   try {
     const userId = req.userId;
     const setting = await Threshold.findOne({ userId });
 
+    let thresholdVal = config.defaultAlertThreshold;
+    if (setting) {
+      thresholdVal = typeof setting.thresholdPaise === 'number'
+        ? toRupees(setting.thresholdPaise)
+        : setting.threshold;
+    }
+
     return sendSuccess(res, {
-      threshold: setting ? setting.threshold : config.defaultAlertThreshold
+      threshold: thresholdVal
     }, 200);
   } catch (err) {
     next(err);

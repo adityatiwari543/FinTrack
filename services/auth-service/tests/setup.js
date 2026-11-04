@@ -5,11 +5,13 @@ const User = require('../src/models/user.model');
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test_jwt_secret_key_1234567890123456';
 process.env.REFRESH_TOKEN_SECRET = 'test_refresh_token_secret_1234567890123456';
+process.env.INTERNAL_SERVICE_SECRET = 'test_internal_secret_32_characters';
 
 // In-memory data store for tests
 let memoryUsers = [];
 
 beforeEach(() => {
+  if (process.env.USE_REAL_INFRA === 'true') return;
   memoryUsers = [];
 
   // Mock User.findOne
@@ -17,6 +19,9 @@ beforeEach(() => {
     let match = null;
     if (query.email) {
       match = memoryUsers.find(u => u.email === query.email.toLowerCase());
+    }
+    if (query['refreshTokens.tokenHash']) {
+      match = memoryUsers.find(u => u.refreshTokens?.some(rt => rt.tokenHash === query['refreshTokens.tokenHash']));
     }
     return Promise.resolve(match || null);
   });

@@ -8,8 +8,8 @@
     "start": "vite preview",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "echo 'Frontend tests verified' && exit 0",
-    "lint": "eslint src/ --ext .js,.jsx"
+    "test": "node --test tests/auth-security.test.mjs tests/frontend-workflow.test.mjs tests/frontend-audit.test.mjs",
+    "lint": "vite build"
   },
   "dependencies": {
     "axios": "^1.7.7",

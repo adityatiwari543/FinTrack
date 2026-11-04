@@ -1,13 +1,27 @@
 const express = require('express');
-const cors = require('cors');
 const authRoutes = require('./routes/auth.routes');
 const requestLogger = require('./middlewares/requestLogger.middleware');
 const errorHandler = require('./middlewares/error.middleware');
 
 const app = express();
 
-app.use(cors());
 app.use(express.json());
+
+// Cookie parsing middleware (zero external dependency)
+app.use((req, res, next) => {
+  req.cookies = {};
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    cookieHeader.split(';').forEach(c => {
+      const parts = c.split('=');
+      const name = parts[0]?.trim();
+      const val = parts.slice(1).join('=').trim();
+      if (name) req.cookies[name] = decodeURIComponent(val);
+    });
+  }
+  next();
+});
+
 app.use(requestLogger);
 
 // Health check mounted at root as well

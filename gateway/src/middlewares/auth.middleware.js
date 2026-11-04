@@ -2,9 +2,10 @@ const jwt = require('jsonwebtoken');
 const config = require('../config/env');
 
 function verifyGatewayToken(req, res, next) {
-  // Strip untrusted incoming internal headers
+  // Strip untrusted incoming internal headers from client
   delete req.headers['x-user-id'];
   delete req.headers['x-user-email'];
+  delete req.headers['x-internal-token'];
 
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {

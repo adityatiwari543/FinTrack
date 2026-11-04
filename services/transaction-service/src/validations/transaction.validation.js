@@ -1,7 +1,21 @@
 const { z } = require('zod');
 
+const isValidDecimalPrecision = (val) => {
+  if (val === undefined || val === null) return true;
+  const str = val.toString().trim();
+  if (str.includes('.')) {
+    const decimals = str.split('.')[1];
+    return decimals.length <= 2;
+  }
+  return true;
+};
+
 const createTransactionSchema = z.object({
-  amount: z.coerce.number().positive('Amount must be a positive number'),
+  amount: z.coerce.number()
+    .positive('Amount must be a positive number')
+    .refine(isValidDecimalPrecision, {
+      message: 'Amount cannot have more than 2 decimal places'
+    }),
   type: z.enum(['income', 'expense'], {
     errorMap: () => ({ message: "Type must be either 'income' or 'expense'" })
   }),
@@ -13,7 +27,12 @@ const createTransactionSchema = z.object({
 });
 
 const updateTransactionSchema = z.object({
-  amount: z.coerce.number().positive('Amount must be a positive number').optional(),
+  amount: z.coerce.number()
+    .positive('Amount must be a positive number')
+    .refine(isValidDecimalPrecision, {
+      message: 'Amount cannot have more than 2 decimal places'
+    })
+    .optional(),
   type: z.enum(['income', 'expense']).optional(),
   category: z.string().trim().min(1).max(100).optional(),
   date: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), {

@@ -1,0 +1,171 @@
+{
+  "timestamp": "2026-11-04T21:28:24.742Z",
+  "totalPassed": 30,
+  "totalFailed": 0,
+  "categories": {
+    "Authentication": [
+      {
+        "testName": "Rejection of unsigned/alg=none JWT",
+        "passed": true,
+        "details": "Status: 401"
+      },
+      {
+        "testName": "Rejection of tampered JWT signature",
+        "passed": true,
+        "details": "Status: 401"
+      },
+      {
+        "testName": "Rejection of expired JWT with TOKEN_EXPIRED code",
+        "passed": true,
+        "details": "Status: 401"
+      },
+      {
+        "testName": "Rejection of unauthenticated protected request",
+        "passed": true,
+        "details": "Status: 401"
+      },
+      {
+        "testName": "Password length policy enforcement (<6 rejected)",
+        "passed": true,
+        "details": "Status: 400"
+      },
+      {
+        "testName": "NoSQL injection object in login rejected by schema",
+        "passed": true,
+        "details": "Status: 400"
+      }
+    ],
+    "Gateway & Isolation": [
+      {
+        "testName": "Direct microservice access rejected with 403 without internal token",
+        "passed": true,
+        "details": "Auth: 403, Trans: 403, Notif: 403"
+      },
+      {
+        "testName": "Direct microservice access with forged internal token rejected",
+        "passed": true,
+        "details": "Status: 403"
+      },
+      {
+        "testName": "Internal token timing-safe length mismatch rejection",
+        "passed": true,
+        "details": "Status: 403"
+      },
+      {
+        "testName": "CORS rejection for untrusted external origins",
+        "passed": true,
+        "details": "Status: 403"
+      },
+      {
+        "testName": "Request ID preservation and propagation header",
+        "passed": true,
+        "details": "Header: req-test-trace-12345"
+      }
+    ],
+    "Data Integrity & IDOR": [
+      {
+        "testName": "Transaction retrieval blocked without verified user identity",
+        "passed": true,
+        "details": "Status: 401"
+      },
+      {
+        "testName": "Rejection of negative transaction amount",
+        "passed": true,
+        "details": "Status: 400"
+      },
+      {
+        "testName": "Rejection of zero transaction amount",
+        "passed": true,
+        "details": "Status: 400"
+      },
+      {
+        "testName": "Rejection of sub-paise fractional amount (>2 decimals)",
+        "passed": true,
+        "details": "Status: 400"
+      },
+      {
+        "testName": "Rejection of invalid transaction type enum",
+        "passed": true,
+        "details": "Status: 400"
+      },
+      {
+        "testName": "Rejection of malformed transaction ObjectId",
+        "passed": true,
+        "details": "Status: 400"
+      }
+    ],
+    "Notification & Threshold": [
+      {
+        "testName": "Notification retrieval blocked without user identity",
+        "passed": true,
+        "details": "Status: 401"
+      },
+      {
+        "testName": "Rejection of negative alert threshold",
+        "passed": true,
+        "details": "Status: 400"
+      },
+      {
+        "testName": "Rejection of non-numeric alert threshold",
+        "passed": true,
+        "details": "Status: 400"
+      },
+      {
+        "testName": "Rejection of fractional sub-paise threshold (>2 decimals)",
+        "passed": true,
+        "details": "Status: 400"
+      }
+    ],
+    "Secret Leakage": [
+      {
+        "testName": ".gitignore enforces exclusion of .env and node_modules",
+        "passed": true,
+        "details": ""
+      },
+      {
+        "testName": "Dockerfiles do not embed hardcoded secrets or copy .env files",
+        "passed": true,
+        "details": ""
+      },
+      {
+        "testName": "Dockerfiles enforce least-privilege non-root execution (USER node)",
+        "passed": true,
+        "details": ""
+      },
+      {
+        "testName": "Frontend production build bundle free of backend connection strings or secrets",
+        "passed": true,
+        "details": ""
+      }
+    ],
+    "RabbitMQ Architecture": [
+      {
+        "testName": "Consumer rejects null or non-object event payloads",
+        "passed": true,
+        "details": ""
+      },
+      {
+        "testName": "Consumer rejects event missing transactionId (routes to DLQ)",
+        "passed": true,
+        "details": ""
+      },
+      {
+        "testName": "Consumer rejects non-integer amountPaise (routes to DLQ)",
+        "passed": true,
+        "details": ""
+      },
+      {
+        "testName": "Consumer accepts valid integer paise event payload",
+        "passed": true,
+        "details": ""
+      }
+    ],
+    "Rate Limiting & DoS": [
+      {
+        "testName": "API Gateway applies express-rate-limit middleware on all routes",
+        "passed": true,
+        "details": ""
+      }
+    ]
+  }
+}

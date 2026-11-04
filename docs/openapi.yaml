@@ -66,22 +66,57 @@ paths:
   /auth/refresh:
     post:
       summary: Refresh JWT access token with rotation
+      description: Rotates refresh token and issues a new access token. Reads refresh token from httpOnly cookie or optional request body.
       tags: [Auth]
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [refreshToken]
               properties:
                 refreshToken:
                   type: string
+                  description: Optional when httpOnly cookie is present.
       responses:
         '200':
-          description: Token rotated successfully
+          description: Token rotated successfully. Returns new access token in body and sets new httpOnly cookie.
         '401':
-          description: Invalid or consumed refresh token
+          description: Invalid, expired, or already-consumed refresh token
+
+  /auth/logout:
+    post:
+      summary: Logout user and invalidate session
+      description: Revokes the refresh token from database and clears the httpOnly cookie.
+      tags: [Auth]
+      responses:
+        '200':
+          description: Successfully logged out
+
+  /health:
+    get:
+      summary: API Gateway and system health check
+      tags: [System]
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      service:
+                        type: string
+                        example: api-gateway
+                      status:
+                        type: string
+                        example: ok
 
   /auth/me:
     get:
@@ -145,7 +180,9 @@ paths:
               properties:
                 amount:
                   type: number
-                  example: 12500
+                  minimum: 0.01
+                  description: Positive amount in Indian Rupees (INR ₹), maximum 2 decimal places. Stored canonically as integer paise.
+                  example: 1250.75
                 type:
                   type: string
                   enum: [income, expense]
@@ -259,6 +296,8 @@ paths:
               properties:
                 threshold:
                   type: number
+                  minimum: 0
+                  description: Non-negative alert threshold in Indian Rupees (INR ₹), maximum 2 decimal places. Stored canonically as integer paise.
                   example: 10000
       responses:
         '200':

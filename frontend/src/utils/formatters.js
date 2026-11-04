@@ -1,5 +1,7 @@
 export function formatINR(val) {
-  return Number(val || 0).toLocaleString('en-IN', {
+  const num = Number(val || 0);
+  return num.toLocaleString('en-IN', {
+    minimumFractionDigits: Number.isInteger(num) ? 0 : 2,
     maximumFractionDigits: 2
   });
 }

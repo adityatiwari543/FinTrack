@@ -2,16 +2,25 @@ const mongoose = require('mongoose');
 const Transaction = require('../src/models/transaction.model');
 
 process.env.NODE_ENV = 'test';
+process.env.INTERNAL_SERVICE_SECRET = 'test_internal_secret_32_characters';
 
 let memoryTransactions = [];
 
 beforeEach(() => {
+  if (process.env.USE_REAL_INFRA === 'true') return;
   memoryTransactions = [];
 
   // Mock save
   jest.spyOn(Transaction.prototype, 'save').mockImplementation(async function () {
     if (!this._id) {
       this._id = new mongoose.Types.ObjectId();
+    }
+    if (this.amountPaise !== undefined && this.amountPaise !== null) {
+      if (this.amount === undefined || this.amount === null) {
+        this.amount = this.amountPaise / 100;
+      }
+    } else if (this.amount !== undefined && this.amount !== null) {
+      this.amountPaise = Math.round(this.amount * 100);
     }
     const idx = memoryTransactions.findIndex(t => t._id.toString() === this._id.toString());
     if (idx >= 0) {
@@ -118,9 +127,11 @@ beforeEach(() => {
       filtered.forEach(item => {
         const key = item[groupField];
         if (!groups[key]) {
-          groups[key] = { _id: key, totalAmount: 0, count: 0 };
+          groups[key] = { _id: key, totalAmount: 0, totalAmountPaise: 0, count: 0 };
         }
-        groups[key].totalAmount += item.amount;
+        const paise = typeof item.amountPaise === 'number' ? item.amountPaise : Math.round(item.amount * 100);
+        groups[key].totalAmountPaise += paise;
+        groups[key].totalAmount = groups[key].totalAmountPaise / 100;
         groups[key].count += 1;
       });
       return Promise.resolve(Object.values(groups));

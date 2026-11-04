@@ -6,6 +6,7 @@ export function SummaryCards({ summary, loading }) {
 
   const formatINR = (val) => {
     return Number(val || 0).toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
   };

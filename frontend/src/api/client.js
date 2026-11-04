@@ -3,59 +3,75 @@ const BASE_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8000/
 class ApiClient {
   constructor() {
     this.baseUrl = BASE_URL;
+    // Security: Access token stored in memory ONLY — never written to localStorage or sessionStorage
+    this.accessToken = null;
+    // Concurrency control: batch multiple simultaneous 401 refresh calls into a single in-flight promise
     this.refreshPromise = null;
+
+    // Proactively clean up any legacy tokens from localStorage if they ever existed
+    this.wipeLegacyStorage();
+  }
+
+  wipeLegacyStorage() {
+    try {
+      localStorage.removeItem('fintrack_access_token');
+      localStorage.removeItem('fintrack_refresh_token');
+      localStorage.removeItem('fintrack_user');
+      sessionStorage.removeItem('fintrack_access_token');
+      sessionStorage.removeItem('fintrack_refresh_token');
+    } catch (_) {}
   }
 
   getAccessToken() {
-    return localStorage.getItem('fintrack_access_token');
+    return this.accessToken;
   }
 
-  getRefreshToken() {
-    return localStorage.getItem('fintrack_refresh_token');
-  }
-
-  setTokens(accessToken, refreshToken) {
-    if (accessToken) localStorage.setItem('fintrack_access_token', accessToken);
-    if (refreshToken) localStorage.setItem('fintrack_refresh_token', refreshToken);
+  setAccessToken(token) {
+    this.accessToken = token || null;
   }
 
   clearTokens() {
-    localStorage.removeItem('fintrack_access_token');
-    localStorage.removeItem('fintrack_refresh_token');
-    localStorage.removeItem('fintrack_user');
+    this.accessToken = null;
+    this.wipeLegacyStorage();
   }
 
   generateRequestId() {
     return `req_fe_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   }
 
+  /**
+   * Refresh the access token using the browser httpOnly cookie.
+   * Concurrent 401 errors await this same in-flight promise to prevent multiple refresh calls.
+   */
   async refreshTokens() {
-    if (this.refreshPromise) return this.refreshPromise;
-
-    const refreshToken = this.getRefreshToken();
-    if (!refreshToken) {
-      this.clearTokens();
-      throw new Error('No refresh token available');
+    if (this.refreshPromise) {
+      return this.refreshPromise;
     }
 
     this.refreshPromise = (async () => {
       try {
         const response = await fetch(`${this.baseUrl}/auth/refresh`, {
           method: 'POST',
+          credentials: 'include', // Ensure httpOnly refreshToken cookie is transmitted
           headers: {
             'Content-Type': 'application/json',
             'x-request-id': this.generateRequestId()
-          },
-          body: JSON.stringify({ refreshToken })
+          }
         });
 
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.success) {
           throw new Error(data.error?.message || 'Token refresh failed');
         }
 
-        this.setTokens(data.data.accessToken, data.data.refreshToken);
-        return data.data.accessToken;
+        const newAccessToken = data.data?.accessToken;
+        if (!newAccessToken) {
+          throw new Error('Malformed token response from server');
+        }
+
+        // Store new access token strictly in memory
+        this.setAccessToken(newAccessToken);
+        return newAccessToken;
       } catch (err) {
         this.clearTokens();
         window.dispatchEvent(new CustomEvent('fintrack_auth_expired'));
@@ -68,6 +84,9 @@ class ApiClient {
     return this.refreshPromise;
   }
 
+  /**
+   * Unified request handler with automatic token refresh on 401
+   */
   async request(endpoint, options = {}, isRetry = false) {
     const url = `${this.baseUrl}${endpoint}`;
     const token = this.getAccessToken();
@@ -82,13 +101,19 @@ class ApiClient {
     try {
       const response = await fetch(url, {
         ...options,
+        credentials: 'include', // Send httpOnly cookies with all API requests
         headers
       });
 
       const data = await response.json().catch(() => ({}));
 
-      // Handle 401 token expiration and transparently retry
-      if (response.status === 401 && !isRetry && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register') && !endpoint.includes('/auth/refresh')) {
+      // Transparent automatic refresh on 401 (retry original request once)
+      const isAuthEndpoint = endpoint.includes('/auth/login') ||
+                             endpoint.includes('/auth/register') ||
+                             endpoint.includes('/auth/refresh') ||
+                             endpoint.includes('/auth/logout');
+
+      if (response.status === 401 && !isRetry && !isAuthEndpoint) {
         try {
           const newToken = await this.refreshTokens();
           options.headers = {
@@ -97,7 +122,7 @@ class ApiClient {
           };
           return this.request(endpoint, options, true);
         } catch (refreshErr) {
-          throw new Error(data.error?.message || 'Session expired, please log in again.');
+          throw new Error(data.error?.message || 'Session expired. Please log in again.');
         }
       }
 
@@ -130,14 +155,14 @@ class ApiClient {
   post(endpoint, body) {
     return this.request(endpoint, {
       method: 'POST',
-      body: JSON.stringify(body)
+      body: body ? JSON.stringify(body) : undefined
     });
   }
 
   put(endpoint, body) {
     return this.request(endpoint, {
       method: 'PUT',
-      body: JSON.stringify(body)
+      body: body ? JSON.stringify(body) : undefined
     });
   }
 

@@ -11,14 +11,21 @@ const app = express();
 // Trust proxy headers if behind reverse proxy
 app.set('trust proxy', 1);
 
-// CORS configuration
+// CORS configuration with explicit origins and credentials
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Server-to-server, curl, Postman
+  return config.allowedOrigins && config.allowedOrigins.includes(origin);
+};
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, postman) or configured frontend
-    if (!origin || origin === config.frontendUrl || origin === 'http://localhost:5173' || origin === 'http://localhost:3000') {
+    if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
-      callback(null, true); // Permissive in dev/docker environments
+      const err = new Error(`Origin ${origin} not allowed by CORS`);
+      err.status = 403;
+      err.code = 'CORS_ORIGIN_DENIED';
+      callback(err);
     }
   },
   credentials: true,
@@ -28,6 +35,31 @@ app.use(cors({
 
 // Request logger with request ID propagation
 app.use(requestLogger);
+
+// Security: Strip untrusted client-supplied identity & internal tokens
+app.use((req, res, next) => {
+  delete req.headers['x-user-id'];
+  delete req.headers['x-user-email'];
+  delete req.headers['x-internal-token'];
+  next();
+});
+
+// CSRF Origin validation for cookie-authenticated endpoints
+app.use('/api/auth', (req, res, next) => {
+  if (req.method === 'POST' && (req.path === '/refresh' || req.path === '/logout')) {
+    const origin = req.headers.origin;
+    if (origin && !isOriginAllowed(origin)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: `CSRF validation rejected: origin '${origin}' is not trusted`,
+          code: 'CSRF_ORIGIN_INVALID'
+        }
+      });
+    }
+  }
+  next();
+});
 
 // Rate limiter
 app.use(rateLimiter);

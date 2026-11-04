@@ -4,18 +4,25 @@
   "private": true,
   "description": "FinTrack - Production-Style MERN Personal Finance Tracker Microservices Application",
   "scripts": {
-    "test": "npm run test:auth && npm run test:transaction && npm run test:notification && npm run test:gateway",
+    "test": "npm run test:auth && npm run test:transaction && npm run test:notification && npm run test:gateway && npm run test:frontend",
     "test:auth": "npm --prefix services/auth-service test",
     "test:transaction": "npm --prefix services/transaction-service test",
     "test:notification": "npm --prefix services/notification-service test",
     "test:gateway": "npm --prefix gateway test",
+    "test:frontend": "npm --prefix frontend test",
+    "test:integration": "node ./services/transaction-service/node_modules/jest/bin/jest.js --config jest.integration.config.js --runInBand --forceExit",
+    "test:all": "npm test && npm run test:integration",
     "lint": "npm run lint:gateway && npm run lint:auth && npm run lint:transaction && npm run lint:notification && npm run lint:frontend",
     "lint:gateway": "npm --prefix gateway run lint --if-present",
     "lint:auth": "npm --prefix services/auth-service run lint --if-present",
     "lint:transaction": "npm --prefix services/transaction-service run lint --if-present",
     "lint:notification": "npm --prefix services/notification-service run lint --if-present",
     "lint:frontend": "npm --prefix frontend run lint --if-present",
-    "seed": "node scripts/seed-demo-data.js"
+    "install:all": "npm --prefix gateway ci && npm --prefix services/auth-service ci && npm --prefix services/transaction-service ci && npm --prefix services/notification-service ci && npm --prefix frontend ci",
+    "seed": "node scripts/seed-demo-data.js",
+    "setup:env": "node -e \"const fs=require('fs'); ['.env','gateway/.env','services/auth-service/.env','services/transaction-service/.env','services/notification-service/.env','frontend/.env'].forEach(f=>{const src=f.replace(/\\.env$/,'.env.example'); if(!fs.existsSync(f) && fs.existsSync(src)){fs.copyFileSync(src, f); console.log('Created ' + f);}});\"",
+    "dev": "npx concurrently -n auth,trans,notif,gate,front -c yellow,blue,magenta,cyan,green \"npm --prefix services/auth-service run dev\" \"npm --prefix services/transaction-service run dev\" \"npm --prefix services/notification-service run dev\" \"npm --prefix gateway run dev\" \"npm --prefix frontend run dev\"",
+    "start": "npx concurrently -n auth,trans,notif,gate,front -c yellow,blue,magenta,cyan,green \"npm --prefix services/auth-service start\" \"npm --prefix services/transaction-service start\" \"npm --prefix services/notification-service start\" \"npm --prefix gateway start\" \"npm --prefix frontend run dev\""
   },
   "keywords": [
     "microservices",

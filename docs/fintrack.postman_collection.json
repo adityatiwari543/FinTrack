@@ -97,6 +97,17 @@
           }
         },
         {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/logout",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ]
+          }
+        },
+        {
           "name": "Get Profile (Me)",
           "request": {
             "method": "GET",
@@ -181,6 +192,14 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/notifications",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/notifications/{{notificationId}}/read",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },

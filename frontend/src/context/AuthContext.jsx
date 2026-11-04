@@ -9,17 +9,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadUser() {
-      const token = api.getAccessToken();
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-
+    async function restoreSession() {
       try {
+        // Security: Attempt to restore session on reload using httpOnly cookie (never localStorage)
+        await api.refreshTokens();
         const response = await authApi.getMe();
         setUser(response.user);
-      } catch (err) {
+      } catch (_) {
+        // No active session or cookie expired
         api.clearTokens();
         setUser(null);
       } finally {
@@ -27,7 +24,7 @@ export function AuthProvider({ children }) {
       }
     }
 
-    loadUser();
+    restoreSession();
 
     const handleExpired = () => {
       setUser(null);
@@ -39,20 +36,22 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const data = await authApi.login({ email, password });
-    api.setTokens(data.accessToken, data.refreshToken);
+    // In-memory access token storage only
+    api.setAccessToken(data.accessToken);
     setUser(data.user);
     return data.user;
   };
 
   const register = async (name, email, password) => {
     const data = await authApi.register({ name, email, password });
-    api.setTokens(data.accessToken, data.refreshToken);
+    // In-memory access token storage only
+    api.setAccessToken(data.accessToken);
     setUser(data.user);
     return data.user;
   };
 
-  const logout = () => {
-    authApi.logout();
+  const logout = async () => {
+    await authApi.logout();
     setUser(null);
   };
 

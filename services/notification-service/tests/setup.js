@@ -3,11 +3,13 @@ const Notification = require('../src/models/notification.model');
 const Threshold = require('../src/models/threshold.model');
 
 process.env.NODE_ENV = 'test';
+process.env.INTERNAL_SERVICE_SECRET = 'test_internal_secret_32_characters';
 
 let memoryNotifications = [];
 let memoryThresholds = [];
 
 beforeEach(() => {
+  if (process.env.USE_REAL_INFRA === 'true') return;
   memoryNotifications = [];
   memoryThresholds = [];
 
@@ -20,12 +22,16 @@ beforeEach(() => {
       err.code = 11000;
       return Promise.reject(err);
     }
+    const amountPaise = data.amountPaise != null ? data.amountPaise : Math.round((data.amount || 0) * 100);
+    const amount = data.amount != null ? data.amount : amountPaise / 100;
     const doc = {
       _id: new mongoose.Types.ObjectId(),
       isRead: false,
       createdAt: new Date(),
       updatedAt: new Date(),
       ...data,
+      amountPaise,
+      amount,
       toJSON() {
         return {
           id: this._id.toString(),
@@ -97,15 +103,19 @@ beforeEach(() => {
   // Mock Threshold.findOneAndUpdate
   jest.spyOn(Threshold, 'findOneAndUpdate').mockImplementation((filter, update) => {
     let match = memoryThresholds.find(t => t.userId === filter.userId);
+    const thresholdPaise = update.thresholdPaise != null ? update.thresholdPaise : Math.round((update.threshold || 0) * 100);
+    const threshold = update.threshold != null ? update.threshold : thresholdPaise / 100;
     if (!match) {
       match = {
         userId: filter.userId,
-        threshold: update.threshold,
-        toJSON() { return { threshold: this.threshold }; }
+        threshold,
+        thresholdPaise,
+        toJSON() { return { threshold: this.threshold, thresholdPaise: this.thresholdPaise }; }
       };
       memoryThresholds.push(match);
     } else {
-      match.threshold = update.threshold;
+      match.threshold = threshold;
+      match.thresholdPaise = thresholdPaise;
     }
     return Promise.resolve(match);
   });

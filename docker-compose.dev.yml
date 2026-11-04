@@ -1,0 +1,29 @@
+# ==============================================================================
+# FinTrack — Local Development Docker Compose Extension
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Binds databases and RabbitMQ management UI to loopback (127.0.0.1) on host
+# strictly for local inspection, debugging, and testing.
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  rabbitmq:
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+
+  mongo-auth:
+    ports:
+      - "127.0.0.1:27018:27017"
+
+  mongo-transactions:
+    ports:
+      - "127.0.0.1:27019:27017"
+
+  mongo-notifications:
+    ports:
+      - "127.0.0.1:27020:27017"

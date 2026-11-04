@@ -1,82 +1,92 @@
+# ==============================================================================
+# FinTrack — Hardened Production Docker Compose Specification
+#
+# Network Architecture:
+#   1. frontend-net: Exposes Frontend (5173) and API Gateway (8000) publicly.
+#   2. backend-net:  Isolated private network connecting Gateway, Microservices,
+#                    RabbitMQ, and MongoDB instances. Zero host ports exposed.
+#
+# Security Posture:
+#   - Zero direct host exposure for MongoDB databases or internal microservices.
+#   - RabbitMQ default guest/guest disabled in favor of required credentials.
+#   - Healthcheck dependencies ensure orderly startup sequence.
+#   - Persistent named volumes for all datastores and message broker state.
+# ==============================================================================
+
 version: '3.8'
 
 services:
   # ==========================================
-  # Message Broker: RabbitMQ
+  # Message Broker: RabbitMQ (Private)
   # ==========================================
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: fintrack-rabbitmq
     restart: unless-stopped
-    ports:
-      - "5672:5672"   # AMQP protocol
-      - "15672:15672" # Management UI
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-${RABBITMQ_DEFAULT_USER:?RABBITMQ_USER or RABBITMQ_DEFAULT_USER is required}}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-${RABBITMQ_DEFAULT_PASS:?RABBITMQ_PASS or RABBITMQ_DEFAULT_PASS is required}}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
-      - fintrack-net
+      - backend-net
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
 
   # ==========================================
-  # Databases: Dedicated per Service
+  # Isolated MongoDB Datastores (Private)
   # ==========================================
   mongo-auth:
     image: mongo:7-jammy
     container_name: fintrack-mongo-auth
     restart: unless-stopped
-    ports:
-      - "27018:27017"
     volumes:
       - mongo_auth_data:/data/db
     networks:
-      - fintrack-net
+      - backend-net
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   mongo-transactions:
     image: mongo:7-jammy
     container_name: fintrack-mongo-transactions
     restart: unless-stopped
-    ports:
-      - "27019:27017"
     volumes:
       - mongo_transactions_data:/data/db
     networks:
-      - fintrack-net
+      - backend-net
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   mongo-notifications:
     image: mongo:7-jammy
     container_name: fintrack-mongo-notifications
     restart: unless-stopped
-    ports:
-      - "27020:27017"
     volumes:
       - mongo_notifications_data:/data/db
     networks:
-      - fintrack-net
+      - backend-net
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   # ==========================================
-  # Backend Microservices
+  # Internal Backend Microservices (Private)
   # ==========================================
   auth-service:
     build:
@@ -84,21 +94,27 @@ services:
       dockerfile: Dockerfile
     container_name: fintrack-auth-service
     restart: unless-stopped
-    ports:
-      - "5001:5001"
     environment:
       PORT: 5001
       NODE_ENV: production
-      MONGO_URI: mongodb://mongo-auth:27017/fintrack_auth
-      JWT_SECRET: fintrack_jwt_access_super_secret_key_change_in_production_32chars
-      JWT_EXPIRES_IN: 15m
-      REFRESH_TOKEN_SECRET: fintrack_jwt_refresh_super_secret_key_change_in_production_32chars
-      REFRESH_TOKEN_EXPIRES_IN: 7d
+      MONGO_URI: ${AUTH_MONGO_URI:-mongodb://mongo-auth:27017/fintrack_auth}
+      DB_NAME: ${AUTH_DB_NAME:-fintrack_auth}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?REFRESH_TOKEN_SECRET is required}
+      REFRESH_TOKEN_EXPIRES_IN: ${REFRESH_TOKEN_EXPIRES_IN:-7d}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:?INTERNAL_SERVICE_SECRET is required}
     depends_on:
       mongo-auth:
         condition: service_healthy
     networks:
-      - fintrack-net
+      - backend-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   transaction-service:
     build:
@@ -106,22 +122,28 @@ services:
       dockerfile: Dockerfile
     container_name: fintrack-transaction-service
     restart: unless-stopped
-    ports:
-      - "5002:5002"
     environment:
       PORT: 5002
       NODE_ENV: production
-      MONGO_URI: mongodb://mongo-transactions:27017/fintrack_transactions
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      MONGO_URI: ${TRANSACTION_MONGO_URI:-mongodb://mongo-transactions:27017/fintrack_transactions}
+      DB_NAME: ${TRANSACTION_DB_NAME:-fintrack_transactions}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-${RABBITMQ_DEFAULT_USER:?RABBITMQ_USER is required}}:${RABBITMQ_PASS:-${RABBITMQ_DEFAULT_PASS:?RABBITMQ_PASS is required}}@rabbitmq:5672
       EXCHANGE_NAME: fintrack_events
       ROUTING_KEY_EXPENSE: expense.created
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:?INTERNAL_SERVICE_SECRET is required}
     depends_on:
       mongo-transactions:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
     networks:
-      - fintrack-net
+      - backend-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5002/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   notification-service:
     build:
@@ -129,27 +151,38 @@ services:
       dockerfile: Dockerfile
     container_name: fintrack-notification-service
     restart: unless-stopped
-    ports:
-      - "5003:5003"
     environment:
       PORT: 5003
       NODE_ENV: production
-      MONGO_URI: mongodb://mongo-notifications:27017/fintrack_notifications
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      MONGO_URI: ${NOTIFICATION_MONGO_URI:-mongodb://mongo-notifications:27017/fintrack_notifications}
+      DB_NAME: ${NOTIFICATION_DB_NAME:-fintrack_notifications}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-${RABBITMQ_DEFAULT_USER:?RABBITMQ_USER is required}}:${RABBITMQ_PASS:-${RABBITMQ_DEFAULT_PASS:?RABBITMQ_PASS is required}}@rabbitmq:5672
       EXCHANGE_NAME: fintrack_events
       QUEUE_NAME: notifications_expense_queue
       ROUTING_KEY_EXPENSE: expense.created
-      DEFAULT_ALERT_THRESHOLD: 10000
+      DEFAULT_ALERT_THRESHOLD: ${DEFAULT_ALERT_THRESHOLD:-10000}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      RETRY_DELAY_MS: ${RETRY_DELAY_MS:-5000}
+      DLX_NAME: ${DLX_NAME:-fintrack_dlx}
+      DLQ_NAME: ${DLQ_NAME:-notifications_expense_dlq}
+      RETRY_QUEUE_NAME: ${RETRY_QUEUE_NAME:-notifications_expense_retry_queue}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:?INTERNAL_SERVICE_SECRET is required}
     depends_on:
       mongo-notifications:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
     networks:
-      - fintrack-net
+      - backend-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5003/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # ==========================================
-  # API Gateway
+  # API Gateway (Public HTTP Ingress: 8000)
   # ==========================================
   gateway:
     build:
@@ -158,44 +191,64 @@ services:
     container_name: fintrack-gateway
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${GATEWAY_PORT:-8000}:8000"
     environment:
       PORT: 8000
       NODE_ENV: production
-      FRONTEND_URL: http://localhost:5173
-      JWT_SECRET: fintrack_jwt_access_super_secret_key_change_in_production_32chars
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:?INTERNAL_SERVICE_SECRET is required}
       AUTH_SERVICE_URL: http://auth-service:5001
       TRANSACTION_SERVICE_URL: http://transaction-service:5002
       NOTIFICATION_SERVICE_URL: http://notification-service:5003
-      RATE_LIMIT_WINDOW_MS: 900000
-      RATE_LIMIT_MAX: 200
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-200}
     depends_on:
-      - auth-service
-      - transaction-service
-      - notification-service
+      auth-service:
+        condition: service_healthy
+      transaction-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
     networks:
-      - fintrack-net
+      - frontend-net
+      - backend-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # ==========================================
-  # Frontend Application
+  # Frontend Application (Public Web UI: 5173)
   # ==========================================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_GATEWAY_URL: http://localhost:8000/api
+        VITE_API_GATEWAY_URL: ${VITE_API_GATEWAY_URL:-http://localhost:8000/api}
     container_name: fintrack-frontend
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "${FRONTEND_PORT:-5173}:80"
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
     networks:
-      - fintrack-net
+      - frontend-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
 networks:
-  fintrack-net:
+  frontend-net:
+    driver: bridge
+  backend-net:
     driver: bridge
 
 volumes:

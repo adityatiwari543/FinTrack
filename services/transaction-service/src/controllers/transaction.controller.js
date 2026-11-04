@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const Transaction = require('../models/transaction.model');
-const { publishExpenseCreated } = require('../services/eventPublisher');
+const eventPublisher = require('../services/eventPublisher');
 const { sendSuccess, sendError } = require('../utils/response');
+const { toPaise, toRupees } = require('../utils/currency');
 
 /**
  * Helper to compute start & end Date of a month (YYYY-MM)
@@ -33,8 +34,11 @@ async function createTransaction(req, res, next) {
     const { amount, type, category, date, note } = req.validatedBody;
     const userId = req.userId;
 
+    const amountPaise = toPaise(amount);
+
     const transaction = new Transaction({
       userId,
+      amountPaise,
       amount,
       type,
       category,
@@ -44,21 +48,26 @@ async function createTransaction(req, res, next) {
 
     await transaction.save();
 
-    req.log?.info({ transactionId: transaction._id, type, amount }, 'Transaction created');
+    req.log?.info({ transactionId: transaction._id, type, amount, amountPaise }, 'Transaction created');
 
     // Asynchronously emit event to RabbitMQ on new expense
     if (type === 'expense') {
-      publishExpenseCreated({
+      eventPublisher.publishExpenseCreated({
         event: 'EXPENSE_CREATED',
         transactionId: transaction._id.toString(),
         userId,
         amount: transaction.amount,
+        amountPaise: transaction.amountPaise,
         category: transaction.category,
         date: transaction.date.toISOString(),
         note: transaction.note,
         timestamp: new Date().toISOString()
+      }).then(published => {
+        if (!published) {
+          req.log?.warn({ transactionId: transaction._id }, 'Expense event could not be published to broker; alert notification delayed or lost');
+        }
       }).catch(err => {
-        req.log?.error({ err }, 'Background publish error');
+        req.log?.error({ err: err.message, transactionId: transaction._id }, 'Background publish error');
       });
     }
 
@@ -158,7 +167,10 @@ async function updateTransaction(req, res, next) {
       return sendError(res, 'Transaction not found', 404, null, 'NOT_FOUND');
     }
 
-    if (updates.amount !== undefined) transaction.amount = updates.amount;
+    if (updates.amount !== undefined) {
+      transaction.amount = updates.amount;
+      transaction.amountPaise = toPaise(updates.amount);
+    }
     if (updates.type !== undefined) transaction.type = updates.type;
     if (updates.category !== undefined) transaction.category = updates.category;
     if (updates.date !== undefined) transaction.date = new Date(updates.date);
@@ -201,6 +213,7 @@ async function deleteTransaction(req, res, next) {
 
 /**
  * Get monthly summary & category breakdown for chosen month (default: current month)
+ * Computed in canonical integer paise to prevent floating-point artifacts.
  */
 async function getMonthlySummary(req, res, next) {
   try {
@@ -213,49 +226,62 @@ async function getMonthlySummary(req, res, next) {
       date: { $gte: startDate, $lt: endDate }
     };
 
-    // Aggregate totals by type
+    // Aggregate totals by type using integer amountPaise
     const totalsPromise = Transaction.aggregate([
       { $match: matchStage },
       {
         $group: {
           _id: '$type',
-          totalAmount: { $sum: '$amount' },
+          totalAmountPaise: {
+            $sum: { $ifNull: ['$amountPaise', { $round: [{ $multiply: ['$amount', 100] }, 0] }] }
+          },
           count: { $sum: 1 }
         }
       }
     ]);
 
-    // Aggregate category-wise expenses for chart
+    // Aggregate category-wise expenses for chart using integer amountPaise
     const categoryPromise = Transaction.aggregate([
       { $match: { ...matchStage, type: 'expense' } },
       {
         $group: {
           _id: '$category',
-          totalAmount: { $sum: '$amount' },
+          totalAmountPaise: {
+            $sum: { $ifNull: ['$amountPaise', { $round: [{ $multiply: ['$amount', 100] }, 0] }] }
+          },
           count: { $sum: 1 }
         }
       },
-      { $sort: { totalAmount: -1 } }
+      { $sort: { totalAmountPaise: -1 } }
     ]);
 
     const [totals, categories] = await Promise.all([totalsPromise, categoryPromise]);
 
-    let totalIncome = 0;
-    let totalExpense = 0;
+    let totalIncomePaise = 0;
+    let totalExpensePaise = 0;
 
     totals.forEach(item => {
-      if (item._id === 'income') totalIncome = item.totalAmount;
-      if (item._id === 'expense') totalExpense = item.totalAmount;
+      const paise = typeof item.totalAmountPaise === 'number' ? item.totalAmountPaise : Math.round((item.totalAmount || 0) * 100);
+      if (item._id === 'income') totalIncomePaise = paise;
+      if (item._id === 'expense') totalExpensePaise = paise;
     });
 
-    const balance = totalIncome - totalExpense;
+    // Exact integer arithmetic
+    const balancePaise = totalIncomePaise - totalExpensePaise;
 
-    const categoryBreakdown = categories.map(cat => ({
-      category: cat._id,
-      amount: cat.totalAmount,
-      count: cat.count,
-      percentage: totalExpense > 0 ? Number(((cat.totalAmount / totalExpense) * 100).toFixed(2)) : 0
-    }));
+    const totalIncome = toRupees(totalIncomePaise);
+    const totalExpense = toRupees(totalExpensePaise);
+    const balance = toRupees(balancePaise);
+
+    const categoryBreakdown = categories.map(cat => {
+      const catPaise = typeof cat.totalAmountPaise === 'number' ? cat.totalAmountPaise : Math.round((cat.totalAmount || 0) * 100);
+      return {
+        category: cat._id,
+        amount: toRupees(catPaise),
+        count: cat.count,
+        percentage: totalExpensePaise > 0 ? Number(((catPaise / totalExpensePaise) * 100).toFixed(2)) : 0
+      };
+    });
 
     return sendSuccess(res, {
       month: targetMonth,

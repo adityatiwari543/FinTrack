@@ -43,6 +43,7 @@ export function DashboardPage() {
       setSummary(data);
     } catch (err) {
       console.error('Error fetching summary:', err);
+      showToast(err.message || 'Failed to load summary', 'error');
     } finally {
       setSummaryLoading(false);
     }
@@ -63,6 +64,7 @@ export function DashboardPage() {
       setPagination(data.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
     } catch (err) {
       console.error('Error fetching transactions:', err);
+      showToast(err.message || 'Failed to load transactions', 'error');
     } finally {
       setTxLoading(false);
     }
