@@ -104,7 +104,15 @@ jobs:
         run: npm test
 
       - name: Run Real Infrastructure Integration Test Suite
-        run: npm run test:integration
+        run: |
+          npm run test:integration > integration_test.log 2>&1 || {
+            echo "### ❌ Integration Test Failure" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat integration_test.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat integration_test.log
+            exit 1
+          }
         env:
           TEST_AUTH_MONGO_URI: mongodb://127.0.0.1:27017/fintrack_auth_test
           TEST_TRANSACTION_MONGO_URI: mongodb://127.0.0.1:27017/fintrack_transactions_test
