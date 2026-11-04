@@ -1,0 +1,152 @@
+name: FinTrack Microservices CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ==========================================
+  # Job 1: Test & Lint across all services
+  # ==========================================
+  test-and-lint:
+    name: Test & Lint Microservices
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - auth-service
+          - transaction-service
+          - notification-service
+          - gateway
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: |
+            services/${{ matrix.service }}/package-lock.json
+            gateway/package-lock.json
+
+      - name: Install Dependencies
+        run: |
+          if [ "${{ matrix.service }}" = "gateway" ]; then
+            cd gateway && npm ci
+          else
+            cd services/${{ matrix.service }} && npm ci
+          fi
+
+      - name: Run Tests
+        run: |
+          if [ "${{ matrix.service }}" = "gateway" ]; then
+            cd gateway && npm test
+          else
+            cd services/${{ matrix.service }} && npm test
+          fi
+
+  # ==========================================
+  # Job 2: Frontend Build Verification
+  # ==========================================
+  frontend-build:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: cd frontend && npm ci
+
+      - name: Build Vite App
+        run: cd frontend && npm run build
+
+  # ==========================================
+  # Job 3: Build & Push Docker Images to GHCR
+  # ==========================================
+  build-and-push:
+    name: Build & Push Docker Containers
+    needs: [test-and-lint, frontend-build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        component:
+          - name: auth-service
+            context: ./services/auth-service
+          - name: transaction-service
+            context: ./services/transaction-service
+          - name: notification-service
+            context: ./services/notification-service
+          - name: gateway
+            context: ./gateway
+          - name: frontend
+            context: ./frontend
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Metadata (Tags, Labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.component.name }}
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.component.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================
+  # Job 4: Automated Deployment Trigger
+  # ==========================================
+  deploy:
+    name: Trigger Automated Deployment
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Trigger Deploy Hook
+        run: |
+          if [ -n "${{ secrets.DEPLOY_HOOK_URL }}" ]; then
+            echo "Triggering deployment webhook..."
+            curl -X POST "${{ secrets.DEPLOY_HOOK_URL }}"
+          else
+            echo "No DEPLOY_HOOK_URL configured. Docker images published to GHCR successfully."
+          fi

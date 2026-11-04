@@ -1,0 +1,272 @@
+openapi: 3.0.3
+info:
+  title: FinTrack Microservices API
+  description: Public API Gateway documentation for FinTrack Personal Finance Tracker.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000/api
+    description: Local API Gateway
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                  example: Aditya Tiwari
+                email:
+                  type: string
+                  format: email
+                  example: aditya@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                  example: Password@123
+      responses:
+        '201':
+          description: User registered successfully
+        '400':
+          description: Validation error
+        '409':
+          description: Email already registered
+
+  /auth/login:
+    post:
+      summary: Login user and retrieve JWT tokens
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  example: demo@fintrack.app
+                password:
+                  type: string
+                  example: Demo@1234
+      responses:
+        '200':
+          description: Successfully authenticated
+        '401':
+          description: Invalid email or password
+
+  /auth/refresh:
+    post:
+      summary: Refresh JWT access token with rotation
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Token rotated successfully
+        '401':
+          description: Invalid or consumed refresh token
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile details
+        '401':
+          description: Unauthorized
+
+  /transactions:
+    get:
+      summary: List paginated and filtered transactions
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: month
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: '2026-11'
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [income, expense]
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Filtered transactions list
+    post:
+      summary: Create a new income or expense transaction
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, type, category]
+              properties:
+                amount:
+                  type: number
+                  example: 12500
+                type:
+                  type: string
+                  enum: [income, expense]
+                  example: expense
+                category:
+                  type: string
+                  example: Shopping
+                date:
+                  type: string
+                  format: date-time
+                note:
+                  type: string
+                  example: New monitor
+      responses:
+        '201':
+          description: Transaction created and async event published if expense
+
+  /transactions/summary:
+    get:
+      summary: Retrieve monthly total income, expense, balance and category breakdown
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: month
+          schema:
+            type: string
+            example: '2026-11'
+      responses:
+        '200':
+          description: Monthly summary metrics and category allocation
+
+  /transactions/{id}:
+    put:
+      summary: Update a transaction
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction updated
+    delete:
+      summary: Delete a transaction
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction deleted
+
+  /notifications:
+    get:
+      summary: List user notifications and unread count
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User notifications
+
+  /notifications/{id}/read:
+    patch:
+      summary: Mark notification as read
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Marked as read
+
+  /settings/threshold:
+    get:
+      summary: Get user expense alert threshold
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current threshold value in INR
+    put:
+      summary: Update user expense alert threshold
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [threshold]
+              properties:
+                threshold:
+                  type: number
+                  example: 10000
+      responses:
+        '200':
+          description: Threshold updated
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
