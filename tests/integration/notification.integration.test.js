@@ -247,7 +247,12 @@ describe('Notification Service Real MongoDB + RabbitMQ Integration Tests (Phase 
       }
     });
 
-    const msg = await amqpChannel.get(TEST_CONFIG.dlqName);
+    let msg = false;
+    for (let i = 0; i < 15; i++) {
+      msg = await amqpChannel.get(TEST_CONFIG.dlqName);
+      if (msg) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
     expect(msg).not.toBe(false);
     expect(msg.properties.headers['x-rejection-reason']).toBe('MALFORMED_JSON');
     amqpChannel.ack(msg);

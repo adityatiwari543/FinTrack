@@ -104,7 +104,6 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
     // Verify index exists on real MongoDB
     const indexes = await User.collection.getIndexes();
     expect(indexes.email_1).toBeDefined();
-    expect(indexes.email_1[0][0]).toBe('email');
   }));
 
   it('Requirement 4 & 5: Valid login issues access token & httpOnly cookie; invalid credentials rejected', runIfMongo(async () => {

@@ -37,6 +37,12 @@ describe('Cross-Service End-to-End Event Flow Integration Tests (Phase C)', () =
     process.env.NODE_ENV = 'test';
     process.env.INTERNAL_SERVICE_SECRET = internalSecret;
 
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    const e2eMongoUri = process.env.TEST_TRANSACTION_MONGO_URI || TEST_CONFIG.transactionMongoUri;
+    await mongoose.connect(e2eMongoUri);
+
     // Connect to RabbitMQ test exchange
     amqpConn = await amqp.connect(TEST_CONFIG.rabbitmqUrl);
     amqpChannel = await amqpConn.createChannel();
@@ -51,6 +57,13 @@ describe('Cross-Service End-to-End Event Flow Integration Tests (Phase C)', () =
   });
 
   afterAll(async () => {
+    if (mongoAvailable) {
+      try {
+        await mongoose.connection.close();
+      } catch (err) {
+        console.error('Mongoose teardown error:', err.message);
+      }
+    }
     if (rabbitAvailable && amqpConn) {
       try {
         await amqpChannel.deleteQueue(TEST_CONFIG.queueName);
