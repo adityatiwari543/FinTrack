@@ -4,10 +4,11 @@
   "private": true,
   "description": "FinTrack - Production-Style MERN Personal Finance Tracker Microservices Application",
   "scripts": {
-    "test": "npm run test:auth && npm run test:transaction",
+    "test": "npm run test:auth && npm run test:transaction && npm run test:notification && npm run test:gateway",
     "test:auth": "npm --prefix services/auth-service test",
     "test:transaction": "npm --prefix services/transaction-service test",
     "test:notification": "npm --prefix services/notification-service test",
+    "test:gateway": "npm --prefix gateway test",
     "lint": "npm run lint:gateway && npm run lint:auth && npm run lint:transaction && npm run lint:notification && npm run lint:frontend",
     "lint:gateway": "npm --prefix gateway run lint --if-present",
     "lint:auth": "npm --prefix services/auth-service run lint --if-present",
