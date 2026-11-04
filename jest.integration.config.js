@@ -3,8 +3,13 @@ process.env.INTERNAL_SERVICE_SECRET = process.env.INTERNAL_SERVICE_SECRET || 'te
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_key_minimum_32_characters';
 process.env.REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || 'test_jwt_secret_key_minimum_32_characters';
 
+try {
+  require('./tests/integration/setup');
+} catch (e) {}
+
 module.exports = {
   testEnvironment: 'node',
+  setupFilesAfterEnv: ['<rootDir>/tests/integration/setup.js'],
   moduleDirectories: [
     'node_modules',
     '<rootDir>/services/transaction-service/node_modules',

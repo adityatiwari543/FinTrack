@@ -9,6 +9,10 @@
  * - Downstream error propagation
  */
 
+try {
+  require('../../tests/integration/setup');
+} catch (e) {}
+
 const http = require('http');
 const express = require('express');
 const jwt = require('jsonwebtoken');

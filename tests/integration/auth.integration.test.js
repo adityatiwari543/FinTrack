@@ -3,6 +3,7 @@
  * Tests against real MongoDB instance (isolated database: fintrack_auth_test)
  */
 
+require('./setup');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { isMongoAvailable, TEST_CONFIG } = require('./infra-check');
@@ -66,6 +67,7 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
 
     const res = await request(app)
       .post('/register')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({
         name: 'Real Mongo User',
@@ -90,6 +92,7 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
 
     const res = await request(app)
       .post('/register')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({
         name: 'Duplicate User',
@@ -112,6 +115,7 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
     // Wrong password rejected
     const badLogin = await request(app)
       .post('/login')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({ email, password: 'WrongPassword' });
 
@@ -121,6 +125,7 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
     // Valid login
     const goodLogin = await request(app)
       .post('/login')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({ email, password: 'Password@123' });
 
@@ -142,11 +147,13 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
     const email = 'rotation.test@fintrack.app';
     await request(app)
       .post('/register')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({ name: 'Rotation User', email, password: 'Password@123' });
 
     const loginRes = await request(app)
       .post('/login')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({ email, password: 'Password@123' });
 
@@ -180,11 +187,13 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
     const email = 'logout.test@fintrack.app';
     await request(app)
       .post('/register')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({ name: 'Logout User', email, password: 'Password@123' });
 
     const loginRes = await request(app)
       .post('/login')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .send({ email, password: 'Password@123' });
 

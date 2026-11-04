@@ -7,6 +7,7 @@
  * Notification Persisted in Notification MongoDB -> Accessible via Notification API.
  */
 
+require('./setup');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const amqp = require('amqplib');

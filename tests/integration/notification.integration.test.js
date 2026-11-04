@@ -3,6 +3,7 @@
  * Tests against real MongoDB instance (fintrack_notifications_test) and real RabbitMQ broker
  */
 
+require('./setup');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const amqp = require('amqplib');
@@ -114,6 +115,7 @@ describe('Notification Service Real MongoDB + RabbitMQ Integration Tests (Phase 
   it('Requirement 5: Threshold settings API updates real MongoDB in thresholdPaise', runIfInfra(async () => {
     const res = await request(app)
       .put('/settings/threshold')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', userId)
       .send({ threshold: 10000 });

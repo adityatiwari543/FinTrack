@@ -3,6 +3,7 @@
  * Tests against real MongoDB instance (isolated database: fintrack_transactions_test)
  */
 
+require('./setup');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { isMongoAvailable, TEST_CONFIG } = require('./infra-check');
@@ -64,6 +65,7 @@ describe('Transaction Service Real MongoDB Integration Tests (Phase C)', () => {
     // 1. Create Income
     const incRes = await request(app)
       .post('/transactions')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', user1)
       .send({
@@ -86,6 +88,7 @@ describe('Transaction Service Real MongoDB Integration Tests (Phase C)', () => {
     // 2. Create Expense
     const expRes = await request(app)
       .post('/transactions')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', user1)
       .send({
@@ -107,6 +110,7 @@ describe('Transaction Service Real MongoDB Integration Tests (Phase C)', () => {
     // Create transaction for user2
     const u2Res = await request(app)
       .post('/transactions')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', user2)
       .send({
@@ -137,6 +141,7 @@ describe('Transaction Service Real MongoDB Integration Tests (Phase C)', () => {
   it('Requirement 4 & 5: Update and Delete transactions with real DB verification', runIfMongo(async () => {
     const createRes = await request(app)
       .post('/transactions')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', user1)
       .send({
@@ -149,6 +154,7 @@ describe('Transaction Service Real MongoDB Integration Tests (Phase C)', () => {
     // Update
     const updateRes = await request(app)
       .put(`/transactions/${txId}`)
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', user1)
       .send({
@@ -230,6 +236,7 @@ describe('Transaction Service Real MongoDB Integration Tests (Phase C)', () => {
   it('Requirement 15: Invalid amounts and dates rejected by Zod', runIfMongo(async () => {
     const badAmount = await request(app)
       .post('/transactions')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', user1)
       .send({
@@ -242,6 +249,7 @@ describe('Transaction Service Real MongoDB Integration Tests (Phase C)', () => {
 
     const badDate = await request(app)
       .post('/transactions')
+      .set('Content-Type', 'application/json')
       .set('x-internal-token', internalSecret)
       .set('x-user-id', user1)
       .send({
