@@ -93,17 +93,9 @@ jobs:
       - name: Install All Dependencies via npm ci
         run: |
           echo "Installing root dependencies..."
-          npm ci || npm install --package-lock-only && npm ci
-          echo "Installing gateway dependencies..."
-          cd gateway && npm ci && cd ..
-          echo "Installing auth-service dependencies..."
-          cd services/auth-service && npm ci && cd ..
-          echo "Installing transaction-service dependencies..."
-          cd services/transaction-service && npm ci && cd ..
-          echo "Installing notification-service dependencies..."
-          cd services/notification-service && npm ci && cd ..
-          echo "Installing frontend dependencies..."
-          cd frontend && npm ci && cd ..
+          npm ci
+          echo "Installing all microservice dependencies..."
+          npm run install:all
 
       - name: Run ESLint Checks
         run: npm run lint
