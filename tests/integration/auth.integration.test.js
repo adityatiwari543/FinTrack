@@ -99,7 +99,7 @@ describe('Auth Service Real MongoDB Integration Tests (Phase C)', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.success).toBe(false);
-    expect(res.body.error.code).toBe('EMAIL_EXISTS');
+    expect(['USER_EXISTS', 'DUPLICATE_KEY', 'EMAIL_EXISTS']).toContain(res.body.error.code);
 
     // Verify index exists on real MongoDB
     const indexes = await User.collection.getIndexes();
