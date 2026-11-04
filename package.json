@@ -1,0 +1,29 @@
+{
+  "name": "fintrack-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FinTrack - Production-Style MERN Personal Finance Tracker Microservices Application",
+  "scripts": {
+    "test": "npm run test:auth && npm run test:transaction",
+    "test:auth": "npm --prefix services/auth-service test",
+    "test:transaction": "npm --prefix services/transaction-service test",
+    "test:notification": "npm --prefix services/notification-service test",
+    "lint": "npm run lint:gateway && npm run lint:auth && npm run lint:transaction && npm run lint:notification && npm run lint:frontend",
+    "lint:gateway": "npm --prefix gateway run lint --if-present",
+    "lint:auth": "npm --prefix services/auth-service run lint --if-present",
+    "lint:transaction": "npm --prefix services/transaction-service run lint --if-present",
+    "lint:notification": "npm --prefix services/notification-service run lint --if-present",
+    "lint:frontend": "npm --prefix frontend run lint --if-present",
+    "seed": "node scripts/seed-demo-data.js"
+  },
+  "keywords": [
+    "microservices",
+    "fintrack",
+    "mern",
+    "rabbitmq",
+    "docker",
+    "ci-cd"
+  ],
+  "author": "Aditya Tiwari",
+  "license": "ISC"
+}
