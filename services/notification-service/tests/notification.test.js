@@ -392,5 +392,11 @@ describe('Notification Service API & Consumer Tests', () => {
       const notif = await Notification.findOne({ transactionId: 'tx_below_threshold_1' });
       expect(notif).toBeNull();
     });
+
+    it('Scenario 13: Should cleanly execute consumer gracefulShutdown without throwing', async () => {
+      const { gracefulShutdown, getServer } = require('../src/index');
+      await expect(gracefulShutdown('SIGTERM')).resolves.not.toThrow();
+      expect(getServer()).toBeNull();
+    });
   });
 });

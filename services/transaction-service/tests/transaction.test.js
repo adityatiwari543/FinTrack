@@ -376,5 +376,11 @@ describe('Transaction Service API Tests', () => {
     it('should safely execute publisher scheduleReconnect without throwing', () => {
       expect(() => eventPublisher.scheduleReconnect()).not.toThrow();
     });
+
+    it('should cleanly execute gracefulShutdown without throwing', async () => {
+      const { gracefulShutdown, getServer } = require('../src/index');
+      await expect(gracefulShutdown('SIGTERM')).resolves.not.toThrow();
+      expect(getServer()).toBeNull();
+    });
   });
 });

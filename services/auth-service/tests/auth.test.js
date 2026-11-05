@@ -348,4 +348,12 @@ describe('Auth Service API Tests', () => {
       config.cookieSameSite = originalSameSite;
     });
   });
+
+  describe('Graceful Process Shutdown (SIGTERM/SIGINT)', () => {
+    it('should cleanly execute gracefulShutdown without throwing', async () => {
+      const { gracefulShutdown, getServer } = require('../src/index');
+      await expect(gracefulShutdown('SIGTERM')).resolves.not.toThrow();
+      expect(getServer()).toBeNull();
+    });
+  });
 });

@@ -21,15 +21,19 @@ async function start() {
   }
 }
 
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal = 'SIGTERM') {
   logger.info({ signal }, 'Received shutdown signal. Closing Transaction Service gracefully...');
   if (server) {
-    server.close(() => logger.info('HTTP server closed.'));
+    await new Promise((resolve) => server.close(resolve));
+    logger.info('HTTP server closed.');
+    server = null;
   }
   await closeRabbitMQ();
   await mongoose.connection.close();
   logger.info('Database and RabbitMQ connections closed. Exiting process.');
-  process.exit(0);
+  if (process.env.NODE_ENV !== 'test') {
+    process.exit(0);
+  }
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
@@ -38,3 +42,9 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 if (process.env.NODE_ENV !== 'test') {
   start();
 }
+
+module.exports = {
+  start,
+  gracefulShutdown,
+  getServer: () => server
+};

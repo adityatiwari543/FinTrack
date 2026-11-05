@@ -11,6 +11,7 @@ let consumerTag = null;
 let isConnecting = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+let activeProcessingCount = 0;
 
 /**
  * Validate incoming event payload schema
@@ -111,8 +112,9 @@ async function processExpenseEvent(eventData) {
  */
 async function handleMessage(ch, msg) {
   if (!msg) return;
-
-  const rawContent = msg.content ? msg.content.toString() : '';
+  activeProcessingCount++;
+  try {
+    const rawContent = msg.content ? msg.content.toString() : '';
   let eventData = null;
 
   // 1. Check for malformed JSON (permanent failure -> DLQ immediately)
@@ -225,6 +227,9 @@ async function handleMessage(ch, msg) {
         logger.error({ err: dlqErr.message }, 'Failed to route exhausted message to DLQ; message remains unacked');
       }
     }
+  }
+  } finally {
+    activeProcessingCount--;
   }
 }
 
@@ -348,17 +353,31 @@ function scheduleReconnect() {
 
 /**
  * Cleanly close consumer, channel and connection on process shutdown
+ * Drains active in-flight processing up to maxWaitMs before severing connections.
  */
-async function closeRabbitMQConsumer() {
+async function closeRabbitMQConsumer(maxWaitMs = 5000) {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
 
   try {
+    // 1. Cancel consumer so RabbitMQ broker halts new deliveries
     if (channel && consumerTag) {
       await channel.cancel(consumerTag).catch(() => {});
+      consumerTag = null;
     }
+
+    // 2. Await in-flight message processing to finish draining
+    const start = Date.now();
+    while (activeProcessingCount > 0 && (Date.now() - start) < maxWaitMs) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (activeProcessingCount > 0) {
+      logger.warn({ inFlightRemaining: activeProcessingCount }, 'Shutdown timeout reached with messages still in-flight');
+    }
+
+    // 3. Close channel and connection
     if (channel) {
       await channel.close().catch(() => {});
     }
@@ -378,5 +397,6 @@ module.exports = {
   handleMessage,
   initRabbitMQConsumer,
   closeRabbitMQConsumer,
-  scheduleReconnect
+  scheduleReconnect,
+  getActiveProcessingCount: () => activeProcessingCount
 };

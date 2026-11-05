@@ -1,0 +1,171 @@
+# ==============================================================================
+# FinTrack Production Render Blueprint
+# ==============================================================================
+# Architecture:
+# - Frontend: Render Static Site (React/Vite with SPA fallback routing)
+# - API Gateway: Public Web Service (Docker container exposing platform-assigned PORT)
+# - Auth Service: Render Private Service (Docker container on internal private network)
+# - Transaction Service: Render Private Service (Docker container on internal private network)
+# - Notification Service: Render Private Service (Docker container on internal private network)
+#
+# Schema Reference: https://render.com/schema/render.yaml.json
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Frontend: React Static Single-Page Application (SPA)
+  # ----------------------------------------------------------------------------
+  - type: web
+    name: fintrack-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: frontend/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_GATEWAY_URL
+        value: https://fintrack-gateway.onrender.com/api
+
+  # ----------------------------------------------------------------------------
+  # 2. API Gateway: Public Entry Point (Only Public-Facing Backend Service)
+  # ----------------------------------------------------------------------------
+  - type: web
+    name: fintrack-gateway
+    runtime: docker
+    dockerfilePath: gateway/Dockerfile
+    dockerContext: gateway
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8000
+      - key: FRONTEND_URL
+        value: https://fintrack-frontend.onrender.com
+      - key: CORS_ORIGINS
+        value: https://fintrack-frontend.onrender.com
+      - key: AUTH_SERVICE_URL
+        value: http://auth-service:5001
+      - key: TRANSACTION_SERVICE_URL
+        value: http://transaction-service:5002
+      - key: NOTIFICATION_SERVICE_URL
+        value: http://notification-service:5003
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX
+        value: 200
+      - key: JWT_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+
+  # ----------------------------------------------------------------------------
+  # 3. Auth Service: Private Backend Microservice (No Public Exposure)
+  # ----------------------------------------------------------------------------
+  - type: pserv
+    name: auth-service
+    runtime: docker
+    dockerfilePath: services/auth-service/Dockerfile
+    dockerContext: services/auth-service
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5001
+      - key: AUTH_PORT
+        value: 5001
+      - key: AUTH_MONGO_URI
+        sync: false
+      - key: AUTH_DB_NAME
+        value: fintrack_auth
+      - key: JWT_SECRET
+        sync: false
+      - key: REFRESH_TOKEN_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: "none"
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: REFRESH_TOKEN_EXPIRES_IN
+        value: 7d
+
+  # ----------------------------------------------------------------------------
+  # 4. Transaction Service: Private Backend Microservice (No Public Exposure)
+  # ----------------------------------------------------------------------------
+  - type: pserv
+    name: transaction-service
+    runtime: docker
+    dockerfilePath: services/transaction-service/Dockerfile
+    dockerContext: services/transaction-service
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5002
+      - key: TRANSACTION_PORT
+        value: 5002
+      - key: TRANSACTION_MONGO_URI
+        sync: false
+      - key: TRANSACTION_DB_NAME
+        value: fintrack_transactions
+      - key: RABBITMQ_URL
+        sync: false
+      - key: EXCHANGE_NAME
+        value: fintrack_events
+      - key: ROUTING_KEY_EXPENSE
+        value: expense.created
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+
+  # ----------------------------------------------------------------------------
+  # 5. Notification Service: Private Backend Microservice (No Public Exposure)
+  # ----------------------------------------------------------------------------
+  - type: pserv
+    name: notification-service
+    runtime: docker
+    dockerfilePath: services/notification-service/Dockerfile
+    dockerContext: services/notification-service
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5003
+      - key: NOTIFICATION_PORT
+        value: 5003
+      - key: NOTIFICATION_MONGO_URI
+        sync: false
+      - key: NOTIFICATION_DB_NAME
+        value: fintrack_notifications
+      - key: RABBITMQ_URL
+        sync: false
+      - key: EXCHANGE_NAME
+        value: fintrack_events
+      - key: QUEUE_NAME
+        value: notifications_expense_queue
+      - key: ROUTING_KEY_EXPENSE
+        value: expense.created
+      - key: DEFAULT_ALERT_THRESHOLD
+        value: "10000"
+      - key: MAX_RETRIES
+        value: "3"
+      - key: RETRY_DELAY_MS
+        value: "5000"
+      - key: DLX_NAME
+        value: fintrack_dlx
+      - key: DLQ_NAME
+        value: notifications_expense_dlq
+      - key: RETRY_QUEUE_NAME
+        value: notifications_expense_retry_queue
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false

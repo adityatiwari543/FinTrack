@@ -1,4 +1,7 @@
-const BASE_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8000/api';
+const rawBaseUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8000/api';
+// Normalize base URL: ensure it trims trailing slashes and points to the /api namespace
+const cleanBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+const BASE_URL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl : `${cleanBaseUrl}/api`;
 
 class ApiClient {
   constructor() {

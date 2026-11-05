@@ -228,3 +228,150 @@ All backend services implement `SIGTERM` and `SIGINT` signal handlers:
 3. Finish processing in-flight consumer messages and acknowledge (`channel.ack`).
 4. Close Mongoose database connections.
 5. Exit cleanly with code `0`.
+
+---
+
+## 8. Render Production Deployment Guide
+
+This section specifies the operational implementation for deploying FinTrack on Render using the automated `render.yaml` Blueprint or manual service creation.
+
+### 8.1 Render Architecture & Service Types
+
+FinTrack deploys as a multi-tier microservices cluster inside a single Render Workspace/Project in the same region (e.g. `frankfurt` or `singapore`):
+
+| Service Name | Render Service Type | Plan Tier | Runtime | Network Accessibility |
+| :--- | :--- | :--- | :--- | :--- |
+| **`fintrack-frontend`** | Static Site (`type: web`, `runtime: static`) | Free | Static / CDN | Public Internet (`https://fintrack-frontend.onrender.com`) |
+| **`fintrack-gateway`** | Web Service (`type: web`, `runtime: docker`) | Starter (or Free) | Docker | Public Internet (`https://fintrack-gateway.onrender.com`) |
+| **`auth-service`** | Private Service (`type: pserv`, `runtime: docker`) | Starter ($7/mo) | Docker | Internal Private Network (`http://auth-service:5001`) |
+| **`transaction-service`**| Private Service (`type: pserv`, `runtime: docker`) | Starter ($7/mo) | Docker | Internal Private Network (`http://transaction-service:5002`) |
+| **`notification-service`**| Private Service (`type: pserv`, `runtime: docker`)| Starter ($7/mo) | Docker | Internal Private Network (`http://notification-service:5003`) |
+
+> [!IMPORTANT]
+> **Render Private Services Pricing Reality**:
+> Render Private Services (`type: pserv`) do **not** support the free tier and require a minimum **Starter** plan ($7/month per service). A complete 5-component deployment with 3 private services costs **$21 – $28/month**.
+
+### 8.2 External Managed Infrastructure Setup
+
+#### 1. MongoDB Atlas Setup
+1. Log in to [MongoDB Atlas](https://cloud.mongodb.com).
+2. Use an existing cluster or create a shared M0 cluster in the same cloud region as your Render services.
+3. **Database Segregation**:
+   - Create three independent logical databases: `fintrack_auth`, `fintrack_transactions`, and `fintrack_notifications`.
+4. **Database Users (Production Scoping)**:
+   - For optimal security, create three scoped database users with `readWrite` restricted strictly to their respective databases, or utilize an administrative user with scoped credentials.
+5. **Network Access / IP Allowlist**:
+   - Because Render dynamic containers do not provide static outbound IPv4 addresses on standard plans, configure Network Access Allowlist to `0.0.0.0/0` (Allow Access from Anywhere).
+   - Secure access strictly with SCRAM-SHA-256 authentication and TLS 1.3 encryption.
+6. **Connection String Format**:
+   ```text
+   mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<database>?retryWrites=true&w=majority
+   ```
+
+#### 2. CloudAMQP (RabbitMQ) Setup
+1. Sign up or log in to [CloudAMQP](https://customer.cloudamqp.com).
+2. Create a new instance on the free **Little Lemur** tier (or dedicated cluster) in the same geographic region (e.g. AWS Frankfurt / Singapore).
+3. Copy the encrypted AMQPS URL from the CloudAMQP console:
+   ```text
+   amqps://<username>:<password>@<host>.rmq.cloudamqp.com/<vhost>
+   ```
+4. Verify broker access in the CloudAMQP Management interface. FinTrack will automatically assert the durable exchange `fintrack_events`, durable queue `notifications_expense_queue`, retry queue, and dead-letter exchange `fintrack_dlx`.
+
+### 8.3 Render Blueprint Deployment (`render.yaml`)
+
+FinTrack provides a turnkey `render.yaml` Blueprint at the repository root conforming strictly to the [Render Blueprint Schema](https://render.com/schema/render.yaml.json).
+
+#### Step-by-Step Blueprint Launch:
+1. Log in to the [Render Dashboard](https://dashboard.render.com).
+2. Navigate to **Blueprints** -> Click **New Blueprint Instance**.
+3. Connect your GitHub repository: `adityatiwari543/FinTrack`.
+4. Render detects `render.yaml` and parses the 5 services automatically.
+5. When prompted for variables marked `sync: false`, input your production secrets:
+   - `INTERNAL_SERVICE_SECRET`: Generate a secure 64-character hex string (`openssl rand -hex 32`).
+   - `JWT_SECRET`: Generate a secure 64-character hex string.
+   - `REFRESH_TOKEN_SECRET`: Generate a secure 64-character hex string.
+   - `AUTH_MONGO_URI`: Atlas connection string for `fintrack_auth`.
+   - `TRANSACTION_MONGO_URI`: Atlas connection string for `fintrack_transactions`.
+   - `NOTIFICATION_MONGO_URI`: Atlas connection string for `fintrack_notifications`.
+   - `RABBITMQ_URL`: CloudAMQP AMQPS connection string.
+6. Click **Apply**. Render provisions all five services according to dependency order.
+
+### 8.4 Manual Dashboard Configuration (If Not Using Blueprint)
+
+If provisioning services individually through the Render GUI:
+
+1. **Provision Private Services First**:
+   - `auth-service`: New -> Private Service -> Docker -> Context `services/auth-service`, Dockerfile `services/auth-service/Dockerfile`. Set `PORT: 5001`.
+   - `transaction-service`: New -> Private Service -> Docker -> Context `services/transaction-service`, Dockerfile `services/transaction-service/Dockerfile`. Set `PORT: 5002`.
+   - `notification-service`: New -> Private Service -> Docker -> Context `services/notification-service`, Dockerfile `services/notification-service/Dockerfile`. Set `PORT: 5003`.
+2. **Provision API Gateway**:
+   - `fintrack-gateway`: New -> Web Service -> Docker -> Context `gateway`, Dockerfile `gateway/Dockerfile`. Health Check Path: `/health`.
+   - Set internal URLs:
+     - `AUTH_SERVICE_URL`: `http://auth-service:5001`
+     - `TRANSACTION_SERVICE_URL`: `http://transaction-service:5002`
+     - `NOTIFICATION_SERVICE_URL`: `http://notification-service:5003`
+3. **Provision Frontend**:
+   - `fintrack-frontend`: New -> Static Site. Root Directory: `frontend`. Build Command: `npm ci && npm run build`. Publish Directory: `dist` (or `frontend/dist`).
+   - Add SPA Rewrite Rule: `/*` -> `/index.html`.
+   - Set Build Variable: `VITE_API_GATEWAY_URL=https://fintrack-gateway.onrender.com/api`.
+
+### 8.5 Production Security & Cookie Configuration
+
+#### Cross-Subdomain Cookie Constraints on `onrender.com`
+- Render provides default domains formatted as `https://<service-name>.onrender.com`.
+- **Public Suffix List (PSL)**: Because `onrender.com` is registered on the PSL, browsers treat `fintrack-frontend.onrender.com` and `fintrack-gateway.onrender.com` as **cross-site**.
+- **Required Configuration**:
+  - `COOKIE_SECURE=true`: Guarantees transmission strictly over HTTPS.
+  - `COOKIE_SAMESITE=none`: Required so browsers transmit the `refreshToken` cookie during cross-site requests to `/api/auth/refresh`.
+  - Gateway CORS: Configured with `credentials: true` and explicit origin `https://fintrack-frontend.onrender.com`.
+  - Gateway CSRF Protection: Validates the incoming `Origin` header against the allowlist on `/refresh` and `/logout`.
+
+### 8.6 Deployment Order & Health Verification
+
+1. **Step 1: Check Infrastructure**:
+   - Test MongoDB Atlas connectivity.
+   - Test CloudAMQP AMQPS connectivity.
+2. **Step 2: Deploy Backend Microservices**:
+   - Deploy `auth-service`, `transaction-service`, `notification-service`.
+   - Render verifies TCP socket readiness on their respective ports (5001, 5002, 5003).
+3. **Step 3: Deploy API Gateway**:
+   - Deploy `fintrack-gateway`.
+   - Verify health:
+     ```bash
+     curl -i https://fintrack-gateway.onrender.com/health
+     ```
+   - Expect HTTP 200:
+     ```json
+     {
+       "status": "ok",
+       "service": "api-gateway",
+       "routes": {
+         "auth": "http://auth-service:5001",
+         "transactions": "http://transaction-service:5002",
+         "notifications": "http://notification-service:5003"
+       }
+     }
+     ```
+4. **Step 4: Deploy Frontend Static Site**:
+   - Deploy `fintrack-frontend`.
+   - Open `https://fintrack-frontend.onrender.com` in a browser.
+   - Verify registration, login, transaction creation, and threshold notifications.
+
+### 8.7 Rollback Procedure
+
+Render maintains historical deployment artifacts for all services:
+1. In the Render Dashboard, select the failed service.
+2. Navigate to the **Deploys** tab.
+3. Locate the previous successful deploy.
+4. Click the three dots (`...`) and select **Rollback to this deploy**.
+5. Render immediately reactivates the previous Docker container image or static build with zero re-compilation delay.
+
+### 8.8 Known Architecture Limitation: Transactional Outbox
+
+FinTrack currently implements a **Synchronous DB Write + Asynchronous RabbitMQ Publish with In-Memory Retry**:
+- When a user creates an expense transaction, the Transaction Service commits the record to `fintrack_transactions` via MongoDB.
+- It then immediately attempts to publish the event `expense.created` to RabbitMQ with publisher confirms.
+- If RabbitMQ is unavailable during the request, the transaction is successfully saved, the HTTP response returns HTTP 201 with `eventPublished: false`, and an in-memory retry loop attempts to deliver the event.
+- **Limitation**: If the Transaction Service process crashes or restarts before an in-memory retry succeeds, the notification event could be lost.
+- **Future Milestone 2 Mitigation**: Implement a persistent Transactional Outbox pattern by storing events in an `outbox` MongoDB collection inside a two-phase transaction and dispatching them via a Change Stream or dedicated polling worker.
+
