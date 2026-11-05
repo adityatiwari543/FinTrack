@@ -81,9 +81,11 @@ export function TransactionModal({ isOpen, onClose, onSave, transaction = null }
 
     try {
       setSubmitting(true);
+      const amountPaise = Math.round(parsedAmount * 100);
       await onSave({
         type,
         amount: parsedAmount,
+        amountPaise,
         category: category.trim(),
         date: new Date(date).toISOString(),
         note: note.trim()
@@ -168,18 +170,18 @@ export function TransactionModal({ isOpen, onClose, onSave, transaction = null }
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">
                 Amount (INR ₹)
               </label>
-              <span className="text-[11px] text-slate-400">Step: ₹50</span>
+              <span className="text-[11px] text-slate-400">Step: ₹0.01 / Quick Add</span>
             </div>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-semibold">₹</span>
               <input
                 type="number"
-                min="0"
-                step="50"
+                min="0.01"
+                step="0.01"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 text-base"
-                placeholder="500"
+                placeholder="500.00"
                 required
               />
             </div>

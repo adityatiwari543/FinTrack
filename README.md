@@ -83,7 +83,7 @@ flowchart TD
 - **Dead-Letter Queue (`notifications_expense_dlq`)**: Permanently captures failed messages (e.g. malformed JSON, schema violations, or exhausted retries) along with diagnostic error headers (`x-rejection-reason`, `x-last-error`, `x-failed-at`), preventing poison-pill blocking on worker threads.
 - **Connection Recovery & Backoff**: Both publisher and consumer employ bounded exponential backoff reconnection (`delay = min(1000 * 2^(attempt-1), 30000ms)`).
 - **Graceful Shutdown**: `SIGTERM` and `SIGINT` signals cleanly close consumers, channels, connections, and database handles.
-- **Outbox Pattern Recommendation**: To bridge the dual-write window between MongoDB transaction commits and RabbitMQ broker confirms, a Transactional Outbox pattern is proposed for mission-critical guarantees during catastrophic broker outages.
+- **Transactional Outbox Limitation**: In the current Milestone 1 architecture, transaction persistence in MongoDB and RabbitMQ message publication are separate operations. While publisher confirms guarantee durability once received by the broker, a broker outage directly after a database commit can delay or lose the notification event. For Milestone 2 production hardening, the Transactional Outbox pattern (atomic multi-document write + change stream worker) is recommended to achieve guaranteed at-least-once cross-service delivery.
 
 ---
 
@@ -110,7 +110,7 @@ flowchart TD
 ## 5. Local Setup & Quickstart
 
 ### Prerequisites
-- [Docker Desktop](https://www.docker.com/) (recommended) OR [Node.js 20+](https://nodejs.org/) with local MongoDB and RabbitMQ.
+- [Docker Desktop](https://www.docker.com/) (recommended) OR [Node.js 22 LTS+](https://nodejs.org/) (Node.js >= 22.0.0, npm >= 10.0.0) with local MongoDB and RabbitMQ.
 
 ### Option A: Run Entire Stack with Docker Compose (Recommended)
 

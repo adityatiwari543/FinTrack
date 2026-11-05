@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "FinTrack Transaction Microservice - CRUD, filters, monthly summary, and RabbitMQ expense event publishing",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
@@ -29,7 +32,9 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "setupFilesAfterEnv": ["./tests/setup.js"],
+    "setupFilesAfterEnv": [
+      "./tests/setup.js"
+    ],
     "testTimeout": 30000
   }
 }

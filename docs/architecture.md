@@ -257,10 +257,27 @@ flowchart TD
    - Reconnection logic in both publisher and consumer employs bounded exponential backoff (`delay = min(1000 * 2^(attempt-1), 30000ms)`).
    - Process signal handlers (`SIGTERM`, `SIGINT`) cleanly close consumers, channels, connections, and database handles.
 
-### 5.3 Remaining Limitations & Outbox Pattern Proposal
+### 5.3 Architectural Limitation: Dual-Write & The Transactional Outbox Pattern
 
-- **Current Dual-Write Window**: The Transaction Service writes to MongoDB first, and then publishes to RabbitMQ asynchronously. If the application or host crashes in the millisecond window between the database commit and the broker confirm (or if RabbitMQ is completely offline), the event may be lost.
-- **Proposed Outbox Pattern Solution**: In a future enhancement, implement a Transactional Outbox table in MongoDB within a multi-document ACID transaction. A dedicated worker tailing the MongoDB change stream will guarantee at-least-once message delivery to RabbitMQ even across catastrophic broker outages.
+In the current FinTrack release (Milestone 1), asynchronous event propagation between the Transaction Service and Notification Service operates under the following architectural trade-offs:
+
+1. **Non-Atomic Dual-Write Boundary**:
+   - Transaction persistence (in MongoDB `fintrack_transactions`) and RabbitMQ event publication (`EXPENSE_CREATED` on topic exchange `fintrack_events`) are currently **separate operations**.
+   - The application does not span MongoDB and RabbitMQ under a two-phase distributed commit protocol (2PC).
+
+2. **Broker Disconnection Impact**:
+   - If the RabbitMQ broker is unreachable, crashes, or suffers a network partition immediately after MongoDB has committed `transaction.save()`, the transaction is safely persisted but event publication fails.
+   - While the HTTP transaction creation endpoint succeeds without crashing or blocking the client, the corresponding notification event is delayed or lost without an outbox retry store.
+
+3. **Publisher Confirms vs. Database Atomicity**:
+   - The Transaction Service leverages AMQP **Publisher Confirms** (`channel.waitForConfirms()` with persistent message delivery). This guarantees that *if* RabbitMQ receives the message, the broker persists it to disk before acknowledging.
+   - However, Publisher Confirms **do not make the MongoDB database write and RabbitMQ message publication atomic**. A failure between the database write and the network publish remains vulnerable to message loss.
+
+4. **Recommended Future Reliability Improvement (Transactional Outbox)**:
+   - For Milestone 2 production hardening, the recommended architectural enhancement is the **Transactional Outbox Pattern**:
+     - Inside a single MongoDB multi-document ACID transaction (`session.withTransaction()`), both the `Transaction` entity and an `OutboxEvent` document are persisted atomically.
+     - A background outbox poller or MongoDB Change Stream worker tails the outbox collection and safely publishes events to RabbitMQ with exponential backoff.
+     - Once published and confirmed by RabbitMQ, the outbox record is marked processed or purged, guaranteeing strictly **at-least-once event delivery** across broker and process outages.
 
 ---
 

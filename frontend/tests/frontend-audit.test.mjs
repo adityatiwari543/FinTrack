@@ -319,10 +319,20 @@ describe('FINTRACK PHASE D: Frontend Audit & Verification (18 Scenarios)', () =>
     assert.strictEqual(validateAmount('abc').valid, false);
     assert.strictEqual(validateAmount('1250.755').valid, false);
 
-    const validPaise = validateAmount('1250.75');
-    assert.strictEqual(validPaise.valid, true);
-    assert.strictEqual(validPaise.amount, 1250.75);
-    assert.strictEqual(validPaise.amountPaise, 125075);
+    // Explicit INR test amounts required by Phase 7A: ₹0.01, ₹100.50, ₹1,250.75, ₹10,000.00
+    const testCases = [
+      { input: '0.01', amount: 0.01, paise: 1 },
+      { input: '100.50', amount: 100.50, paise: 10050 },
+      { input: '1250.75', amount: 1250.75, paise: 125075 },
+      { input: '10000.00', amount: 10000.00, paise: 1000000 }
+    ];
+
+    testCases.forEach(({ input, amount, paise }) => {
+      const res = validateAmount(input);
+      assert.strictEqual(res.valid, true, `Validation should pass for ${input}`);
+      assert.strictEqual(res.amount, amount, `Amount mismatch for ${input}`);
+      assert.strictEqual(res.amountPaise, paise, `Paise conversion mismatch for ${input}`);
+    });
   });
 
   // -------------------------------------------------------------

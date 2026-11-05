@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "FinTrack API Gateway - Single entry point, JWT verification, rate limiting, and reverse proxy",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
