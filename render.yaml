@@ -49,11 +49,11 @@ services:
       - key: CORS_ORIGINS
         value: https://fintrack-frontend.onrender.com
       - key: AUTH_SERVICE_URL
-        value: http://auth-service:5001
+        value: http://fintrack-auth-service:5001
       - key: TRANSACTION_SERVICE_URL
-        value: http://transaction-service:5002
+        value: http://fintrack-transaction-service:5002
       - key: NOTIFICATION_SERVICE_URL
-        value: http://notification-service:5003
+        value: http://fintrack-notification-service:5003
       - key: RATE_LIMIT_WINDOW_MS
         value: 900000
       - key: RATE_LIMIT_MAX
@@ -64,10 +64,10 @@ services:
         sync: false
 
   # ----------------------------------------------------------------------------
-  # 3. Auth Service: Private Backend Microservice (No Public Exposure)
+  # 3. Auth Service: Backend Microservice
   # ----------------------------------------------------------------------------
   - type: pserv
-    name: auth-service
+    name: fintrack-auth-service
     runtime: docker
     dockerfilePath: services/auth-service/Dockerfile
     dockerContext: services/auth-service
@@ -99,10 +99,10 @@ services:
         value: 7d
 
   # ----------------------------------------------------------------------------
-  # 4. Transaction Service: Private Backend Microservice (No Public Exposure)
+  # 4. Transaction Service: Backend Microservice
   # ----------------------------------------------------------------------------
   - type: pserv
-    name: transaction-service
+    name: fintrack-transaction-service
     runtime: docker
     dockerfilePath: services/transaction-service/Dockerfile
     dockerContext: services/transaction-service
@@ -128,10 +128,10 @@ services:
         sync: false
 
   # ----------------------------------------------------------------------------
-  # 5. Notification Service: Private Backend Microservice (No Public Exposure)
+  # 5. Notification Service: Backend Microservice
   # ----------------------------------------------------------------------------
   - type: pserv
-    name: notification-service
+    name: fintrack-notification-service
     runtime: docker
     dockerfilePath: services/notification-service/Dockerfile
     dockerContext: services/notification-service

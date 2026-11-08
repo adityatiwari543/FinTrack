@@ -130,7 +130,14 @@ class ApiClient {
       }
 
       if (!response.ok || !data.success) {
-        const errorMsg = data.error?.message || `Request failed with status ${response.status}`;
+        let errorMsg = data.error?.message;
+        if (!errorMsg) {
+          if (response.status === 502 || response.status === 504) {
+            errorMsg = 'Service is starting up or waking up from sleep (502). Please wait 30 seconds and try again.';
+          } else {
+            errorMsg = `Request failed with status ${response.status}`;
+          }
+        }
         const error = new Error(errorMsg);
         error.status = response.status;
         error.code = data.error?.code;

@@ -13,6 +13,8 @@ function createServiceProxy(targetGetter, pathRewrite) {
     router: () => getTarget(),
     changeOrigin: true,
     pathRewrite,
+    timeout: 60000,
+    proxyTimeout: 60000,
     on: {
       proxyReq: (proxyReq, req, res) => {
         // Forward request id

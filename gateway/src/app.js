@@ -14,7 +14,15 @@ app.set('trust proxy', 1);
 // CORS configuration with explicit origins and credentials
 const isOriginAllowed = (origin) => {
   if (!origin) return true; // Server-to-server, curl, Postman
-  return config.allowedOrigins && config.allowedOrigins.includes(origin);
+  const cleanOrigin = origin.replace(/\/+$/, '');
+  if (config.allowedOrigins && config.allowedOrigins.includes(cleanOrigin)) {
+    return true;
+  }
+  // Allow onrender.com preview origins if in production on render
+  if (process.env.RENDER && cleanOrigin.endsWith('.onrender.com')) {
+    return true;
+  }
+  return false;
 };
 
 app.use(cors({
